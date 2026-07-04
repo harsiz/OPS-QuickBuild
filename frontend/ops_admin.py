@@ -160,7 +160,7 @@ async def users_action():
             [PRIV_UNRESTRICTED, user_id])
         _boards_remove(user_id, user['country'])
         return done(f"'{user['name']}' banned — off the leaderboards, "
-                    'fully applies on their next login")
+                    'fully applies on their next login')
 
     if action == 'unban':
         await glob.db.execute(
