@@ -1,0 +1,121 @@
+{% extends 'admin/base.html' %}
+{% block title %} Users {% endblock %}
+
+{% block content %}
+<div class="container" style="padding: 24px 12px;">
+  <h1 class="title">👥 User management</h1>
+
+  <div class="tabs">
+    <ul>
+      <li><a href="/admin/">Dashboard</a></li>
+      <li class="is-active"><a href="/admin/users">Users</a></li>
+      <li><a href="/admin/maps">Maps</a></li>
+    </ul>
+  </div>
+
+  {% if msg %}
+  <div class="notification {{ 'is-danger' if st == 'error' else 'is-success' }}">{{ msg }}</div>
+  {% endif %}
+
+  <form method="get" action="/admin/users" class="field has-addons" style="max-width: 480px;">
+    <div class="control is-expanded">
+      <input class="input" type="text" name="q" value="{{ q }}" placeholder="search by name or id">
+    </div>
+    <div class="control"><button class="button is-primary" type="submit">Search</button></div>
+  </form>
+
+  <table class="table is-fullwidth" style="background: transparent;">
+    <thead>
+      <tr><th>id</th><th>name</th><th>cc</th><th>pp</th><th>flags</th><th>manage</th></tr>
+    </thead>
+    <tbody>
+      {% for u in users %}
+      <tr>
+        <td>{{ u.id }}</td>
+        <td><a href="/u/{{ u.id }}">{{ u.name }}</a></td>
+        <td>{{ u.country }}</td>
+        <td>{{ u.pp or 0 }}</td>
+        <td>
+          {% if u.is_banned %}<span class="tag is-danger">BANNED</span>{% endif %}
+          {% if u.is_silenced %}<span class="tag is-warning">silenced</span>{% endif %}
+          {% if u.is_staff %}<span class="tag is-info">staff</span>{% endif %}
+          {% if u.is_nominator %}<span class="tag is-link">nominator</span>{% endif %}
+          {% if u.is_donor %}<span class="tag is-primary">supporter</span>{% endif %}
+        </td>
+        <td>
+          <details>
+            <summary class="button is-small">manage ⚙️</summary>
+            <div class="box" style="margin-top: 8px;">
+
+              {% if u.is_banned %}
+              <form method="post" action="/admin/users/action" style="display:inline-block; margin: 2px;">
+                <input type="hidden" name="user_id" value="{{ u.id }}"><input type="hidden" name="q" value="{{ q }}">
+                <input type="hidden" name="action" value="unban">
+                <button class="button is-small is-success">✅ unban</button>
+              </form>
+              {% else %}
+              <form method="post" action="/admin/users/action" style="display:inline-block; margin: 2px;"
+                    onsubmit="return confirm('ban {{ u.name }}?');">
+                <input type="hidden" name="user_id" value="{{ u.id }}"><input type="hidden" name="q" value="{{ q }}">
+                <input type="hidden" name="action" value="ban">
+                <button class="button is-small is-danger">🔨 ban</button>
+              </form>
+              {% endif %}
+
+              {% if u.is_silenced %}
+              <form method="post" action="/admin/users/action" style="display:inline-block; margin: 2px;">
+                <input type="hidden" name="user_id" value="{{ u.id }}"><input type="hidden" name="q" value="{{ q }}">
+                <input type="hidden" name="action" value="unsilence">
+                <button class="button is-small is-success">🔊 unsilence</button>
+              </form>
+              {% else %}
+              <form method="post" action="/admin/users/action" style="display:inline-block; margin: 2px;">
+                <input type="hidden" name="user_id" value="{{ u.id }}"><input type="hidden" name="q" value="{{ q }}">
+                <input type="hidden" name="action" value="silence">
+                <div class="field has-addons">
+                  <div class="control"><input class="input is-small" style="width: 70px;" type="number" name="hours" value="24" min="1"></div>
+                  <div class="control"><button class="button is-small is-warning">🔇 silence (h)</button></div>
+                </div>
+              </form>
+              {% endif %}
+
+              <form method="post" action="/admin/users/action" style="display:inline-block; margin: 2px;">
+                <input type="hidden" name="user_id" value="{{ u.id }}"><input type="hidden" name="q" value="{{ q }}">
+                <input type="hidden" name="action" value="rename">
+                <div class="field has-addons">
+                  <div class="control"><input class="input is-small" style="width: 140px;" type="text" name="new_name" placeholder="new name"></div>
+                  <div class="control"><button class="button is-small is-info">✏️ rename</button></div>
+                </div>
+              </form>
+
+              <form method="post" action="/admin/users/action" style="display:inline-block; margin: 2px;">
+                <input type="hidden" name="user_id" value="{{ u.id }}"><input type="hidden" name="q" value="{{ q }}">
+                <input type="hidden" name="action" value="{{ 'undonor' if u.is_donor else 'donor' }}">
+                <button class="button is-small">{{ '💔 remove supporter' if u.is_donor else '💖 give supporter' }}</button>
+              </form>
+
+              <form method="post" action="/admin/users/action" style="display:inline-block; margin: 2px;">
+                <input type="hidden" name="user_id" value="{{ u.id }}"><input type="hidden" name="q" value="{{ q }}">
+                <input type="hidden" name="action" value="{{ 'unnominator' if u.is_nominator else 'nominator' }}">
+                <button class="button is-small">{{ '🗑️ remove nominator' if u.is_nominator else '📋 make nominator' }}</button>
+              </form>
+
+              <form method="post" action="/admin/users/action" style="display:inline-block; margin: 2px;"
+                    onsubmit="return confirm('WIPE ALL SCORES for {{ u.name }}? this cannot be undone!');">
+                <input type="hidden" name="user_id" value="{{ u.id }}"><input type="hidden" name="q" value="{{ q }}">
+                <input type="hidden" name="action" value="wipe">
+                <button class="button is-small is-danger is-outlined">💥 wipe scores</button>
+              </form>
+
+            </div>
+          </details>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <p class="is-size-7" style="opacity: 0.6;">bans/privs fully apply when the player next logs in
+  (bancho.py caches online sessions). leaderboards update instantly.</p>
+</div>
+{% endblock %}

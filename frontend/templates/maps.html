@@ -1,0 +1,92 @@
+{% extends 'admin/base.html' %}
+{% block title %} Maps {% endblock %}
+
+{% block content %}
+<div class="container" style="padding: 24px 12px;">
+  <h1 class="title">🗺️ Map ranking</h1>
+
+  <div class="tabs">
+    <ul>
+      <li><a href="/admin/">Dashboard</a></li>
+      <li><a href="/admin/users">Users</a></li>
+      <li class="is-active"><a href="/admin/maps">Maps</a></li>
+    </ul>
+  </div>
+
+  {% if msg %}
+  <div class="notification {{ 'is-danger' if st == 'error' else 'is-success' }}">{{ msg }}</div>
+  {% endif %}
+
+  <div class="box">
+    <h2 class="subtitle">change ranked status</h2>
+    <form method="post" action="/admin/maps/action">
+      <input type="hidden" name="q" value="{{ q }}">
+      <div class="field is-grouped is-grouped-multiline">
+        <div class="control">
+          <input class="input" type="number" name="ident" placeholder="beatmap(set) id" required>
+        </div>
+        <div class="control">
+          <div class="select">
+            <select name="target">
+              <option value="set">whole mapset</option>
+              <option value="map">single difficulty</option>
+            </select>
+          </div>
+        </div>
+        <div class="control">
+          <div class="select">
+            <select name="action">
+              <option value="rank">rank ✅ (gives pp)</option>
+              <option value="love">love 💖 (leaderboard, no pp)</option>
+              <option value="unrank">unrank ❌</option>
+            </select>
+          </div>
+        </div>
+        <div class="control"><button class="button is-primary" type="submit">apply</button></div>
+      </div>
+      <p class="is-size-7" style="opacity: 0.6;">the set id is the number in the osu! url
+      (osu.ppy.sh/beatmapsets/<b>12345</b>). a map must exist in the server db first —
+      someone downloading/playing it in-game puts it there. status is frozen so bancho.py
+      won't sync it back to official.</p>
+    </form>
+  </div>
+
+  <form method="get" action="/admin/maps" class="field has-addons" style="max-width: 480px;">
+    <div class="control is-expanded">
+      <input class="input" type="text" name="q" value="{{ q }}" placeholder="search artist / title / id">
+    </div>
+    <div class="control"><button class="button is-primary" type="submit">Search</button></div>
+  </form>
+
+  <table class="table is-fullwidth" style="background: transparent;">
+    <thead>
+      <tr><th>map id</th><th>set id</th><th>map</th><th>status</th><th>quick actions</th></tr>
+    </thead>
+    <tbody>
+      {% for m in maps %}
+      <tr>
+        <td>{{ m.id }}</td>
+        <td>{{ m.set_id }}</td>
+        <td>{{ m.artist }} - {{ m.title }} [{{ m.version }}] <span style="opacity:.5;">by {{ m.creator }}</span></td>
+        <td>
+          <span class="tag {{ 'is-success' if m.status == 2 else ('is-primary' if m.status == 5 else 'is-dark') }}">
+            {{ m.status_label }}{% if m.frozen %} ❄️{% endif %}
+          </span>
+        </td>
+        <td>
+          {% for act, label in [('rank', '✅'), ('love', '💖'), ('unrank', '❌')] %}
+          <form method="post" action="/admin/maps/action" style="display:inline-block; margin: 1px;">
+            <input type="hidden" name="q" value="{{ q }}">
+            <input type="hidden" name="ident" value="{{ m.set_id }}">
+            <input type="hidden" name="target" value="set">
+            <input type="hidden" name="action" value="{{ act }}">
+            <button class="button is-small" title="{{ act }} whole set">{{ label }} set</button>
+          </form>
+          {% endfor %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

@@ -6,6 +6,17 @@ the running history of [Auraelia](https://justharsiz.online) (`-devserver justha
 
 ---
 
+## 2026-07-04 — admin panel powers 🛠️
+
+the website admin panel does real things now (staff accounts only):
+
+- **/admin/users**: search players, ban/unban (leaderboards update
+  instantly), silence with custom duration, rename, full score wipes,
+  supporter and nominator toggles
+- **/admin/maps**: rank / love / unrank any beatmap from the browser —
+  whole mapset or single difficulty, statuses frozen so they stick
+- footer github link now points to the server's toolkit repo
+
 ## 2026-07-04 — pp v3.2: "one leaderboard, for real this time" 🤝⚡
 
 full recalc + score migration.

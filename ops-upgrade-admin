@@ -1,0 +1,108 @@
+#!/usr/bin/env bash
+#
+#  OPS_QuickBuild — add-on: admin panel upgrade 🛠️😎
+#
+#  Gives guweb's admin panel actual powers:
+#    /admin/users — ban/unban, silence, rename, score wipes,
+#                   supporter + nominator toggles
+#    /admin/maps  — rank / love / unrank beatmaps from the browser
+#
+#  Requires an existing OPS install with the frontend (ops-add-frontend).
+#  Idempotent — safe to rerun (also how you get updates to the panel).
+#
+#  usage:  sudo ./ops-upgrade-admin [/opt/yourserver]
+#
+set -euo pipefail
+
+OPS_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+R=$'\033[0m'; B=$'\033[1m'; DIM=$'\033[2m'
+RED=$'\033[31m'; GRN=$'\033[32m'; YLW=$'\033[33m'; CYN=$'\033[36m'; MAG=$'\033[35m'; PNK=$'\033[95m'
+ok()   { echo -e "  ${GRN}✅ $*${R}"; }
+info() { echo -e "  ${CYN}🔹 $*${R}"; }
+warn() { echo -e "  ${YLW}⚠️  $*${R}"; }
+die()  { echo -e "\n  ${RED}${B}💀 nah that ain't it: $*${R}\n" >&2; exit 1; }
+
+echo -e "${PNK}${B}\n   🛠️  OPS_QuickBuild — admin panel upgrade 😎\n${R}"
+
+[[ "$(id -u)" -eq 0 ]] || die "run me as root (sudo ./ops-upgrade-admin)"
+
+INSTALL_DIR="${1-}"
+if [[ -z "$INSTALL_DIR" ]]; then
+  for d in /opt/*/guweb/config.py; do
+    [[ -f "$d" ]] && INSTALL_DIR="$(dirname "$(dirname "$d")")" && break
+  done
+fi
+GUWEB_DIR="$INSTALL_DIR/guweb"
+[[ -n "$INSTALL_DIR" && -f "$GUWEB_DIR/config.py" ]] \
+  || die "no guweb found — run ops-add-frontend first (or pass the install dir)"
+SLUG="$(basename "$INSTALL_DIR")"
+info "upgrading the admin panel at $GUWEB_DIR"
+
+command -v uv >/dev/null 2>&1 || export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
+
+# 1) drop in the blueprint + templates (rerun = update)
+cp "$OPS_ROOT/frontend/ops_admin.py" "$GUWEB_DIR/blueprints/ops_admin.py"
+cp "$OPS_ROOT/frontend/templates/users.html" "$GUWEB_DIR/templates/admin/users.html"
+cp "$OPS_ROOT/frontend/templates/maps.html"  "$GUWEB_DIR/templates/admin/maps.html"
+ok "blueprint + templates installed"
+
+# 2) redis client for live leaderboard updates on ban/unban
+uv pip install --python "$GUWEB_DIR/.venv/bin/python" redis >/dev/null 2>&1 \
+  && ok "redis client installed into guweb's venv" \
+  || warn "couldn't install redis client — bans still work, boards fix on next recalc"
+
+# 3) register the blueprint in main.py (idempotent)
+python3 - "$GUWEB_DIR" <<'EOF'
+import sys
+from pathlib import Path
+
+main_py = Path(sys.argv[1]) / "main.py"
+src = main_py.read_text()
+if "ops_admin" in src:
+    print("  \033[36m🔹 blueprint already registered in main.py\033[0m")
+else:
+    anchor = "app.register_blueprint(admin, url_prefix='/admin')"
+    if anchor not in src:
+        raise SystemExit("anchor line not found in main.py — guweb layout changed?")
+    src = src.replace(anchor, anchor + "\n\n"
+        "# OPS_QuickBuild admin extension\n"
+        "from blueprints.ops_admin import ops_admin\n"
+        "app.register_blueprint(ops_admin, url_prefix='/admin')")
+    main_py.write_text(src)
+    print("  \033[32m✅ blueprint registered in main.py\033[0m")
+EOF
+
+# 4) sidebar links in the admin base template (idempotent)
+python3 - "$GUWEB_DIR" <<'EOF'
+import sys
+from pathlib import Path
+
+base = Path(sys.argv[1]) / "templates" / "admin" / "base.html"
+src = base.read_text()
+if "OPS admin nav" in src:
+    print("  \033[36m🔹 sidebar links already present\033[0m")
+else:
+    anchor = '<ul class="nav">'
+    if anchor not in src:
+        print("  \033[33m⚠️  sidebar anchor not found — use /admin/users + /admin/maps directly\033[0m")
+    else:
+        links = (anchor + '\n              <!-- OPS admin nav -->\n'
+            '              <li class="nav-item"><a class="nav-link" href="/admin/users">'
+            '<span class="icon"><i class="fas fa-users"></i></span> <span>Users</span></a></li>\n'
+            '              <li class="nav-item"><a class="nav-link" href="/admin/maps">'
+            '<span class="icon"><i class="fas fa-map"></i></span> <span>Maps</span></a></li>')
+        base.write_text(src.replace(anchor, links, 1))
+        print("  \033[32m✅ sidebar links added (Users, Maps)\033[0m")
+EOF
+
+echo -e "\n${GRN}${B}  ══════════════════════════════════════════════${R}"
+echo -e "  ${GRN}${B}🎉 ADMIN PANEL HAS POWERS NOW 😎${R}"
+echo -e "${GRN}${B}  ══════════════════════════════════════════════${R}\n"
+echo -e "  ${B}restart the website to load it:${R}"
+echo -e "     ${GRN}tmux kill-session -t $SLUG-web; tmux new -d -s $SLUG-web $INSTALL_DIR/start_frontend.sh${R}\n"
+echo -e "  ${B}then (staff accounts only):${R}"
+echo -e "     ${CYN}/admin/users${R}  — ban, silence, rename, wipe, supporter/nominator"
+echo -e "     ${CYN}/admin/maps${R}   — rank/love/unrank mapsets from the browser\n"
+echo -e "  ${DIM}bans hit the leaderboards instantly; the in-game session of an online"
+echo -e "  target fully updates when they next log in (bancho.py caches sessions).${R}\n"
