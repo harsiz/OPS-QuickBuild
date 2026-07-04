@@ -55,6 +55,20 @@ def extract_pp(result: object) -> float | None:
     return None
 
 
+def extract_components(result: object) -> dict:
+    """Pull the pp component breakdown (aim/speed/acc/fl) out of a result."""
+    if isinstance(result, dict):
+        perf = result.get("performance", result)
+    else:
+        perf = getattr(result, "performance", result)
+    comps: dict = {}
+    for key in ("pp_acc", "pp_aim", "pp_speed", "pp_flashlight"):
+        val = perf.get(key) if isinstance(perf, dict) else getattr(perf, key, None)
+        if isinstance(val, (int, float)):
+            comps[key] = float(val)
+    return comps
+
+
 def build_score_params(params_cls, kwargs: dict):
     """Construct ScoreParams, dropping any kwargs this bancho.py version doesn't know."""
     accepted = set(getattr(params_cls, "__annotations__", {}) or [])
@@ -192,10 +206,12 @@ def main() -> int:
                 done += 1
                 continue
             try:
-                pp = float(modify_pp(pp, {
+                ctx = {
                     "source": "recalc", "score_id": sid, "user_id": userid,
                     "mode": mode, "mods": mods, "acc": acc, "map_id": map_id,
-                }))
+                }
+                ctx.update(extract_components(result))
+                pp = float(modify_pp(pp, ctx))
             except Exception:
                 pass  # a broken profile shouldn't nuke the recalc
             if not math.isfinite(pp) or pp < 0:

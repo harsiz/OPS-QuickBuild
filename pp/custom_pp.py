@@ -112,6 +112,13 @@ def _apply_one(result, ctx_base):
     elif hasattr(result, "performance"):
         perf = result.performance
 
+    # expose the pp component breakdown (aim/speed/acc/fl) so profiles can
+    # do skill-based logic, e.g. buffing stream maps
+    for key in ("pp_acc", "pp_aim", "pp_speed", "pp_flashlight"):
+        val = perf.get(key) if isinstance(perf, dict) else getattr(perf, key, None)
+        if isinstance(val, (int, float)):
+            ctx_base[key] = float(val)
+
     if isinstance(perf, dict) and isinstance(perf.get("pp"), (int, float)):
         try:
             new_pp = float(modify_pp(float(perf["pp"]), dict(ctx_base)))
