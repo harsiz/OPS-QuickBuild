@@ -67,12 +67,39 @@ def modify_pp(pp: float, ctx: dict) -> float:
 
 def apply_to_results(results, args=None, kwargs=None):
     try:
-        ctx_base = {"source": "live"}
-        for result in results or []:
-            _apply_one(result, ctx_base)
+        score_params = _extract_score_params(args, kwargs)
+        for i, result in enumerate(results or []):
+            ctx = {"source": "live"}
+            if score_params is not None and i < len(score_params):
+                sp = score_params[i]
+                ctx["mode"] = getattr(sp, "mode", None)
+                ctx["mods"] = getattr(sp, "mods", None)
+                ctx["acc"] = getattr(sp, "acc", None)
+                ctx["combo"] = getattr(sp, "combo", None)
+            _apply_one(result, ctx)
     except Exception:
         pass
     return results
+
+
+def _extract_score_params(args, kwargs):
+    # calculate_performances(osu_file_path, scores) — dig the ScoreParams list
+    # out of the call so modify_pp gets mods/mode/acc on live submissions too.
+    try:
+        candidates = []
+        if kwargs:
+            candidates.append(kwargs.get("scores"))
+        if args:
+            candidates.extend(args)
+        for cand in candidates:
+            if cand is None or isinstance(cand, (str, bytes)):
+                continue
+            items = list(cand)
+            if items and hasattr(items[0], "mods"):
+                return items
+    except Exception:
+        pass
+    return None
 
 
 def _apply_one(result, ctx_base):
