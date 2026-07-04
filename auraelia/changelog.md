@@ -6,6 +6,19 @@ the running history of [Auraelia](https://justharsiz.online) (`-devserver justha
 
 ---
 
+## 2026-07-04 — no-code PP builder + server stats 🧮📊
+
+- **/admin/pp — the PP calculation builder**: change the entire pp system
+  from the website, zero code. base multiplier range + curve shape, per-mod
+  bonuses/nerfs (flat or scaling with play value), stream buff / aim nerf,
+  pp cap, relax multiplier. hitting **Save and Update** generates the
+  profile, backs up the old one, recalculates every score and restarts the
+  game server automatically (progress log shown on the page)
+- **/admin/stats**: live server stats — players/online/banned, scores
+  submitted (all-time/7d/24h), total plays, maps in db/ranked/loved,
+  **pp economy** (sum of all active bests), pp awarded in the last 24h/7d,
+  highest pp plays, most played maps
+
 ## 2026-07-04 — admin panel powers 🛠️
 
 the website admin panel does real things now (staff accounts only):

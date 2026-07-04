@@ -1,0 +1,143 @@
+{% extends 'admin/base.html' %}
+{% block title %} PP Builder {% endblock %}
+
+{% block content %}
+<div class="container" style="padding: 24px 12px;">
+  <h1 class="title">🧮 PP calculation builder</h1>
+
+  <div class="tabs">
+    <ul>
+      <li><a href="/admin/">Dashboard</a></li>
+      <li><a href="/admin/users">Users</a></li>
+      <li><a href="/admin/maps">Maps</a></li>
+      <li class="is-active"><a href="/admin/pp">PP</a></li>
+      <li><a href="/admin/stats">Stats</a></li>
+    </ul>
+  </div>
+
+  {% if msg %}
+  <div class="notification {{ 'is-danger' if st == 'error' else 'is-success' }}">{{ msg }}</div>
+  {% endif %}
+
+  {% if handwritten %}
+  <div class="notification is-warning">
+    ⚠️ the current pp profile was hand-written (not made by this builder). the form below
+    shows defaults — saving will <b>replace</b> the hand-written profile (a .bak is kept).
+  </div>
+  {% endif %}
+
+  {% if log_tail %}
+  <div class="box">
+    <h2 class="subtitle is-6">📜 last update log</h2>
+    <pre style="background: rgba(0,0,0,.3); padding: 10px; font-size: 12px;">{{ log_tail }}</pre>
+  </div>
+  {% endif %}
+
+  <form method="post" action="/admin/pp/save"
+        onsubmit="return confirm('save this pp system, recalc ALL scores and restart the game server?');">
+
+    <div class="box">
+      <h2 class="subtitle">📈 base multiplier</h2>
+      <div class="field is-grouped is-grouped-multiline">
+        <div class="control">
+          <label class="label is-small">min (weak plays)</label>
+          <input class="input" type="number" step="0.05" name="base_min" value="{{ cfg.base_min }}">
+        </div>
+        <div class="control">
+          <label class="label is-small">max (best plays)</label>
+          <input class="input" type="number" step="0.05" name="base_max" value="{{ cfg.base_max }}">
+        </div>
+        <div class="control">
+          <label class="label is-small">max reached at (raw pp)</label>
+          <input class="input" type="number" step="10" name="full_at" value="{{ cfg.full_at }}">
+        </div>
+        <div class="control">
+          <label class="label is-small">curve shape</label>
+          <div class="select">
+            <select name="curve">
+              <option value="front" {{ 'selected' if cfg.curve == 'front' }}>front-loaded (mid plays ~70% up)</option>
+              <option value="linear" {{ 'selected' if cfg.curve == 'linear' }}>linear (even spread)</option>
+              <option value="back" {{ 'selected' if cfg.curve == 'back' }}>back-loaded (top-heavy)</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <p class="is-size-7" style="opacity:.6;">every score's bancho pp is multiplied by a value between
+      min and max, based on how good the play is (its raw pp vs the "max reached at" point).</p>
+    </div>
+
+    <div class="box">
+      <h2 class="subtitle">🎛️ mod rules</h2>
+      {% set rules = cfg.mod_rules + [{}, {}, {}] %}
+      {% for rule in rules[:6] %}
+      <div class="field is-grouped">
+        <div class="control">
+          <div class="select">
+            <select name="mod_bit">
+              <option value="">— mod —</option>
+              {% for bit, label in mod_choices %}
+              <option value="{{ bit }}" {{ 'selected' if rule.get('bit') == bit }}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+        <div class="control">
+          <input class="input" type="number" step="1" name="mod_pct" style="width: 110px;"
+                 placeholder="± %" value="{{ rule.get('pct', '') }}">
+        </div>
+        <div class="control">
+          <div class="select">
+            <select name="mod_scale">
+              <option value="flat" {{ 'selected' if rule.get('scale') == 'flat' }}>flat bonus</option>
+              <option value="ramp" {{ 'selected' if rule.get('scale') == 'ramp' }}>scales with play value</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+      <p class="is-size-7" style="opacity:.6;">e.g. "EZ +45 scales with play value" = up to 45% more pp with EZ.
+      negative % = nerf. leave the mod dropdown empty to skip a row. one rule per mod.</p>
+    </div>
+
+    <div class="box">
+      <h2 class="subtitle">🎯 skill-based rules <span class="is-size-7" style="opacity:.6;">(uses the calculator's aim/speed breakdown per play)</span></h2>
+      <div class="field is-grouped is-grouped-multiline">
+        <div class="control">
+          <label class="label is-small">stream/burst map buff (max +%)</label>
+          <input class="input" type="number" step="1" name="stream_buff" value="{{ cfg.stream_buff }}">
+        </div>
+        <div class="control">
+          <label class="label is-small">aim map nerf (max -%)</label>
+          <input class="input" type="number" step="1" name="aim_nerf" value="{{ cfg.aim_nerf }}">
+        </div>
+      </div>
+      <p class="is-size-7" style="opacity:.6;">set both to 0 to disable. the buff/nerf scales with how
+      speed- or aim-dominant the map actually is.</p>
+    </div>
+
+    <div class="box">
+      <h2 class="subtitle">🧢 limits</h2>
+      <div class="field is-grouped is-grouped-multiline">
+        <div class="control">
+          <label class="label is-small">pp cap per play (0 = no cap)</label>
+          <input class="input" type="number" step="50" name="cap" value="{{ cfg.cap or 0 }}">
+        </div>
+        <div class="control">
+          <label class="label is-small">relax multiplier (1.0 = same as vanilla)</label>
+          <input class="input" type="number" step="0.05" name="relax_factor" value="{{ cfg.relax_factor }}">
+        </div>
+      </div>
+    </div>
+
+    <button class="button is-primary is-medium" type="submit">
+      💾 Save and Update <span class="is-size-7" style="margin-left: 8px; opacity:.7;">(recalcs everything + restarts server)</span>
+    </button>
+  </form>
+
+  <p class="is-size-7" style="opacity:.6; margin-top: 12px;">
+    saving generates the profile file, backs up the old one, recalculates <b>every score</b>,
+    rebuilds totals + leaderboards, and restarts the game server — all automatic, takes a few
+    minutes. players get briefly disconnected by the restart and can rejoin immediately.
+  </p>
+</div>
+{% endblock %}

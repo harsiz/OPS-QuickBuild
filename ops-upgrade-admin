@@ -45,7 +45,9 @@ command -v uv >/dev/null 2>&1 || export PATH="$HOME/.local/bin:$HOME/.cargo/bin:
 cp "$OPS_ROOT/frontend/ops_admin.py" "$GUWEB_DIR/blueprints/ops_admin.py"
 cp "$OPS_ROOT/frontend/templates/users.html" "$GUWEB_DIR/templates/admin/users.html"
 cp "$OPS_ROOT/frontend/templates/maps.html"  "$GUWEB_DIR/templates/admin/maps.html"
-ok "blueprint + templates installed"
+cp "$OPS_ROOT/frontend/templates/pp.html"    "$GUWEB_DIR/templates/admin/pp.html"
+cp "$OPS_ROOT/frontend/templates/stats.html" "$GUWEB_DIR/templates/admin/stats.html"
+ok "blueprint + templates installed (users, maps, pp builder, stats)"
 
 # 2) redis client for live leaderboard updates on ban/unban
 uv pip install --python "$GUWEB_DIR/.venv/bin/python" redis >/dev/null 2>&1 \
@@ -73,27 +75,38 @@ else:
     print("  \033[32m✅ blueprint registered in main.py\033[0m")
 EOF
 
-# 4) sidebar links in the admin base template (idempotent)
+# 4) sidebar links in the admin base template (idempotent, adds missing ones)
 python3 - "$GUWEB_DIR" <<'EOF'
 import sys
 from pathlib import Path
 
 base = Path(sys.argv[1]) / "templates" / "admin" / "base.html"
 src = base.read_text()
-if "OPS admin nav" in src:
+
+entries = [
+    ('/admin/users', 'fa-users', 'Users'),
+    ('/admin/maps', 'fa-map', 'Maps'),
+    ('/admin/pp', 'fa-calculator', 'PP'),
+    ('/admin/stats', 'fa-chart-line', 'Stats'),
+]
+missing = [e for e in entries if f'href="{e[0]}"' not in src]
+if not missing:
     print("  \033[36m🔹 sidebar links already present\033[0m")
 else:
-    anchor = '<ul class="nav">'
+    marker = '<!-- OPS admin nav -->'
+    anchor = marker if marker in src else '<ul class="nav">'
     if anchor not in src:
-        print("  \033[33m⚠️  sidebar anchor not found — use /admin/users + /admin/maps directly\033[0m")
+        print("  \033[33m⚠️  sidebar anchor not found — use the /admin/* urls directly\033[0m")
     else:
-        links = (anchor + '\n              <!-- OPS admin nav -->\n'
-            '              <li class="nav-item"><a class="nav-link" href="/admin/users">'
-            '<span class="icon"><i class="fas fa-users"></i></span> <span>Users</span></a></li>\n'
-            '              <li class="nav-item"><a class="nav-link" href="/admin/maps">'
-            '<span class="icon"><i class="fas fa-map"></i></span> <span>Maps</span></a></li>')
-        base.write_text(src.replace(anchor, links, 1))
-        print("  \033[32m✅ sidebar links added (Users, Maps)\033[0m")
+        items = ''.join(
+            f'\n              <li class="nav-item"><a class="nav-link" href="{href}">'
+            f'<span class="icon"><i class="fas {icon}"></i></span> '
+            f'<span>{label}</span></a></li>'
+            for href, icon, label in missing)
+        prefix = anchor if marker in src else anchor + '\n              ' + marker
+        src = src.replace(anchor, prefix + items, 1)
+        base.write_text(src)
+        print(f"  \033[32m✅ sidebar links added: {', '.join(e[2] for e in missing)}\033[0m")
 EOF
 
 echo -e "\n${GRN}${B}  ══════════════════════════════════════════════${R}"
@@ -103,6 +116,8 @@ echo -e "  ${B}restart the website to load it:${R}"
 echo -e "     ${GRN}tmux kill-session -t $SLUG-web; tmux new -d -s $SLUG-web $INSTALL_DIR/start_frontend.sh${R}\n"
 echo -e "  ${B}then (staff accounts only):${R}"
 echo -e "     ${CYN}/admin/users${R}  — ban, silence, rename, wipe, supporter/nominator"
-echo -e "     ${CYN}/admin/maps${R}   — rank/love/unrank mapsets from the browser\n"
+echo -e "     ${CYN}/admin/maps${R}   — rank/love/unrank mapsets from the browser"
+echo -e "     ${CYN}/admin/pp${R}     — no-code pp builder (save = auto recalc + restart)"
+echo -e "     ${CYN}/admin/stats${R}  — server stats: pp economy, top plays, most played\n"
 echo -e "  ${DIM}bans hit the leaderboards instantly; the in-game session of an online"
 echo -e "  target fully updates when they next log in (bancho.py caches sessions).${R}\n"

@@ -1,0 +1,86 @@
+{% extends 'admin/base.html' %}
+{% block title %} Stats {% endblock %}
+
+{% block content %}
+<div class="container" style="padding: 24px 12px;">
+  <h1 class="title">📊 Server stats</h1>
+
+  <div class="tabs">
+    <ul>
+      <li><a href="/admin/">Dashboard</a></li>
+      <li><a href="/admin/users">Users</a></li>
+      <li><a href="/admin/maps">Maps</a></li>
+      <li><a href="/admin/pp">PP</a></li>
+      <li class="is-active"><a href="/admin/stats">Stats</a></li>
+    </ul>
+  </div>
+
+  <div class="columns is-multiline">
+    {% for label, value, icon in [
+      ('players', t.users, '👥'),
+      ('online now (5 min)', t.online, '🟢'),
+      ('banned', t.banned, '🔨'),
+      ('scores submitted', t.scores_all, '🎯'),
+      ('scores (24h)', t.scores_24h, '📅'),
+      ('scores (7d)', t.scores_7d, '🗓️'),
+      ('total plays', t.plays_total, '🕹️'),
+      ('maps in db', t.maps_total, '🗺️'),
+      ('ranked maps', t.maps_ranked, '✅'),
+      ('loved maps', t.maps_loved, '💖'),
+      ('pp economy (active bests)', t.pp_economy, '💰'),
+      ('pp awarded (24h)', t.pp_24h, '⚡'),
+      ('pp awarded (7d)', t.pp_7d, '📈'),
+    ] %}
+    <div class="column is-3">
+      <div class="box has-text-centered">
+        <p class="heading">{{ icon }} {{ label }}</p>
+        <p class="title is-4">{{ '{:,}'.format(value | int) }}</p>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="columns">
+    <div class="column is-6">
+      <div class="box">
+        <h2 class="subtitle">🏆 highest pp plays</h2>
+        <table class="table is-fullwidth" style="background: transparent;">
+          <thead><tr><th>#</th><th>player</th><th>map</th><th>pp</th><th>acc</th></tr></thead>
+          <tbody>
+            {% for s in top_scores %}
+            <tr>
+              <td>{{ loop.index }}</td>
+              <td><a href="/u/{{ s.uid }}">{{ s.uname }}</a></td>
+              <td class="is-size-7">{{ s.artist }} - {{ s.title }} [{{ s.version }}]</td>
+              <td><b>{{ '{:,}'.format(s.pp | int) }}</b></td>
+              <td>{{ '%.2f' % s.acc }}%</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="5">no scores yet 🦗</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="column is-6">
+      <div class="box">
+        <h2 class="subtitle">🔥 most played maps</h2>
+        <table class="table is-fullwidth" style="background: transparent;">
+          <thead><tr><th>#</th><th>map</th><th>plays</th></tr></thead>
+          <tbody>
+            {% for m in top_maps %}
+            <tr>
+              <td>{{ loop.index }}</td>
+              <td class="is-size-7">{{ m.artist }} - {{ m.title }} [{{ m.version }}]</td>
+              <td><b>{{ '{:,}'.format(m.plays | int) }}</b></td>
+            </tr>
+            {% else %}
+            <tr><td colspan="3">no plays yet 🦗</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
