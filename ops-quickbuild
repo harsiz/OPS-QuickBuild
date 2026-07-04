@@ -1,0 +1,435 @@
+#!/usr/bin/env bash
+#
+#  ██████╗ ██████╗ ███████╗     ██████╗ ██╗   ██╗██╗ ██████╗██╗  ██╗██████╗ ██╗   ██╗██╗██╗     ██████╗
+#  ██╔═══██╗██╔══██╗██╔════╝    ██╔═══██╗██║   ██║██║██╔════╝██║ ██╔╝██╔══██╗██║   ██║██║██║     ██╔══██╗
+#  ██║   ██║██████╔╝███████╗    ██║   ██║██║   ██║██║██║     █████╔╝ ██████╔╝██║   ██║██║██║     ██║  ██║
+#  ██║   ██║██╔═══╝ ╚════██║    ██║▄▄ ██║██║   ██║██║██║     ██╔═██╗ ██╔══██╗██║   ██║██║██║     ██║  ██║
+#  ╚██████╔╝██║     ███████║    ╚██████╔╝╚██████╔╝██║╚██████╗██║  ██╗██████╔╝╚██████╔╝██║███████╗██████╔╝
+#   ╚═════╝ ╚═╝     ╚══════╝     ╚══▀▀═╝  ╚═════╝ ╚═╝ ╚═════╝╚═╝  ╚═╝╚═════╝  ╚═════╝ ╚═╝╚══════╝╚═════╝
+#
+#  OPS_QuickBuild — builds an entire osu! private server (osu!stable, -devserver) in one go 😎
+#  target: Debian / Ubuntu servers. stack: bancho.py + MariaDB + Redis + nginx.
+#
+set -euo pipefail
+
+OPS_VERSION="1.0.0"
+BANCHO_REPO="https://github.com/osuAkatsuki/bancho.py.git"
+OPS_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# ─── colors ──────────────────────────────────────────────────────────────────
+R=$'\033[0m'; B=$'\033[1m'; DIM=$'\033[2m'
+RED=$'\033[31m'; GRN=$'\033[32m'; YLW=$'\033[33m'; BLU=$'\033[34m'
+MAG=$'\033[35m'; CYN=$'\033[36m'; PNK=$'\033[95m'
+
+ok()   { echo -e "  ${GRN}✅ $*${R}"; }
+info() { echo -e "  ${CYN}🔹 $*${R}"; }
+warn() { echo -e "  ${YLW}⚠️  $*${R}"; }
+die()  { echo -e "\n  ${RED}${B}💀 nah that ain't it: $*${R}\n" >&2; exit 1; }
+step() { STEP_N=$((STEP_N+1)); echo -e "\n${MAG}${B}── [$STEP_N/$STEP_TOTAL] $* ──${R}"; }
+STEP_N=0; STEP_TOTAL=12
+
+ask() { # ask "prompt" "default" -> REPLY_VAL
+  local prompt="$1" def="${2-}"
+  if [[ -n "$def" ]]; then
+    read -r -p "  ${CYN}❓ ${prompt} ${DIM}[${def}]${R}: " REPLY_VAL </dev/tty || true
+    REPLY_VAL="${REPLY_VAL:-$def}"
+  else
+    while true; do
+      read -r -p "  ${CYN}❓ ${prompt}${R}: " REPLY_VAL </dev/tty || true
+      [[ -n "$REPLY_VAL" ]] && break
+      echo -e "  ${YLW}bro you gotta type something 😭${R}"
+    done
+  fi
+}
+
+banner() {
+  echo -e "${PNK}${B}"
+  cat <<'EOF'
+
+   ╔═╗╔═╗╔═╗   ╔═╗ ┬ ┬┬┌─┐┬┌─╔╗ ┬ ┬┬┬  ╔╦╗
+   ║ ║╠═╝╚═╗   ║═╬╗│ │││  ├┴┐╠╩╗│ │││   ║║
+   ╚═╝╩  ╚═╝   ╚═╝╚└─┘┴└─┘┴ ┴╚═╝└─┘┴┴─┘═╩╝
+EOF
+  echo -e "${R}${DIM}   osu! private server, built for you, start to finish 😎  v${OPS_VERSION}${R}"
+  echo -e "${DIM}   stack: bancho.py • MariaDB • Redis • nginx • osu!stable (-devserver)${R}\n"
+}
+
+# ─── preflight ───────────────────────────────────────────────────────────────
+banner
+
+[[ "$(id -u)" -eq 0 ]] || die "run me as root bestie (sudo ./ops-quickbuild)"
+command -v apt-get >/dev/null 2>&1 || die "no apt?? this tool is for Debian/Ubuntu servers only"
+info "root check passed, apt found — we ball 🤝"
+
+# ─── gather config ───────────────────────────────────────────────────────────
+echo -e "\n${B}${PNK}📝 ok first, tell me about your server${R}\n"
+
+ask "server name (the vibe, e.g. 'Ouendan')" "MyOsuServer";           SERVER_NAME="$REPLY_VAL"
+SLUG="$(echo "$SERVER_NAME" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | sed 's/^-*//;s/-*$//')"
+[[ -n "$SLUG" ]] || SLUG="osu-server"
+
+ask "domain (players connect with osu!.exe -devserver <this>)" "";    DOMAIN="$REPLY_VAL"
+[[ "$DOMAIN" == *.* ]] || die "'$DOMAIN' is not a real domain lol, needs a dot (e.g. cool-server.xyz)"
+
+ask "bot name (chat bot, user id 1)" "${SERVER_NAME}Bot";             BOT_NAME="$REPLY_VAL"
+ask "install directory" "/opt/${SLUG}";                               INSTALL_DIR="$REPLY_VAL"
+ask "app port (internal, nginx proxies to it)" "10000";               APP_PORT="$REPLY_VAL"
+ask "path to your accounts file (username:password per line, blank = skip)" "-"; ACCOUNTS_FILE="$REPLY_VAL"
+[[ "$ACCOUNTS_FILE" == "-" ]] && ACCOUNTS_FILE=""
+if [[ -n "$ACCOUNTS_FILE" && ! -f "$ACCOUNTS_FILE" ]]; then
+  die "accounts file '$ACCOUNTS_FILE' doesn't exist 💀 (make it or pass '-' to skip)"
+fi
+ask "osu! api v1 key (optional, helps with beatmap lookups — blank is fine)" "-"; OSU_API_KEY="$REPLY_VAL"
+[[ "$OSU_API_KEY" == "-" ]] && OSU_API_KEY=""
+
+echo -e "\n  ${B}🔐 SSL — osu!stable REQUIRES https on all subdomains:${R}"
+echo -e "     ${GRN}1)${R} Let's Encrypt wildcard cert (real domain, you'll add a DNS TXT record — recommended)"
+echo -e "     ${YLW}2)${R} self-signed cert (testing only — every player must install it as trusted root)"
+echo -e "     ${DIM}3)${R} skip (you already have certs, you'll wire them up yourself)"
+ask "pick 1/2/3" "1"; SSL_MODE="$REPLY_VAL"
+
+DB_NAME="${SLUG//-/_}"
+DB_USER="${DB_NAME:0:16}"
+DB_PASS="$(openssl rand -hex 16 2>/dev/null || head -c16 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+
+echo -e "\n${B}${PNK}🧾 the plan:${R}"
+echo -e "   ${DIM}server${R}    ${B}$SERVER_NAME${R} ($SLUG)"
+echo -e "   ${DIM}domain${R}    ${B}$DOMAIN${R} (+ osu. c. ce. c4. c5. c6. a. b. api. assets. subdomains)"
+echo -e "   ${DIM}install${R}   $INSTALL_DIR"
+echo -e "   ${DIM}database${R}  $DB_NAME (user: $DB_USER, password: auto-generated 🔒)"
+echo -e "   ${DIM}accounts${R}  ${ACCOUNTS_FILE:-"(none — import later with import-accounts.sh)"}"
+echo -e "   ${DIM}ssl${R}       mode $SSL_MODE"
+ask "we doing this? (yes/no)" "yes"
+[[ "$REPLY_VAL" =~ ^[Yy] ]] || die "aight, cancelled. run me again when you're ready 🫡"
+
+BANCHO_DIR="$INSTALL_DIR/bancho.py"
+OPS_DIR="$INSTALL_DIR/ops"
+CERT_DIR="$INSTALL_DIR/certs"
+DATA_DIR="$BANCHO_DIR/.data"
+REPORT="$INSTALL_DIR/ops-quickbuild-report.txt"
+
+# ─── 1. system packages ──────────────────────────────────────────────────────
+step "📦 installing system packages (this is the boring part, hang tight)"
+export DEBIAN_FRONTEND=noninteractive
+apt-get update -qq
+apt-get install -y -qq git curl ca-certificates build-essential \
+  nginx mariadb-server redis-server certbot tmux openssl >/dev/null
+ok "git, nginx, mariadb, redis, certbot, tmux — all installed"
+
+systemctl enable --now mariadb redis-server nginx >/dev/null 2>&1
+ok "mariadb + redis + nginx are up and enabled on boot"
+
+# ─── 2. uv (python package manager) ──────────────────────────────────────────
+step "🐍 installing uv (python toolchain)"
+if ! command -v uv >/dev/null 2>&1; then
+  curl -LsSf https://astral.sh/uv/install.sh | sh >/dev/null 2>&1
+  export PATH="$HOME/.local/bin:$PATH"
+fi
+command -v uv >/dev/null 2>&1 || die "uv didn't install, check your network"
+ok "uv ready: $(uv --version)"
+
+# ─── 3. clone bancho.py ──────────────────────────────────────────────────────
+step "⬇️  pulling bancho.py (the actual server software)"
+mkdir -p "$INSTALL_DIR" "$OPS_DIR" "$CERT_DIR"
+if [[ -d "$BANCHO_DIR/.git" ]]; then
+  warn "bancho.py already cloned at $BANCHO_DIR — reusing it"
+else
+  git clone --depth 1 "$BANCHO_REPO" "$BANCHO_DIR" 2>&1 | tail -1
+fi
+ok "bancho.py source in place"
+
+# ─── 4. python deps ──────────────────────────────────────────────────────────
+step "🧪 installing python dependencies (uv sync — grabs the pp calculator too)"
+cd "$BANCHO_DIR"
+uv sync --no-install-project >/dev/null 2>&1 || uv sync >/dev/null
+uv pip install --python "$BANCHO_DIR/.venv/bin/python" pymysql >/dev/null
+VENV_PY="$BANCHO_DIR/.venv/bin/python"
+ok "venv built, deps locked, pymysql added for the ops scripts"
+
+# ─── 5. database ─────────────────────────────────────────────────────────────
+step "🗄️  creating the database (users, scores, maps, stats — the whole schema)"
+mysql -u root <<SQL
+CREATE DATABASE IF NOT EXISTS \`$DB_NAME\` CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
+CREATE USER IF NOT EXISTS '$DB_USER'@'localhost' IDENTIFIED BY '$DB_PASS';
+GRANT ALL PRIVILEGES ON \`$DB_NAME\`.* TO '$DB_USER'@'localhost';
+FLUSH PRIVILEGES;
+SQL
+if ! mysql -u root "$DB_NAME" -e "SELECT 1 FROM users LIMIT 1" >/dev/null 2>&1; then
+  mysql -u root "$DB_NAME" < "$BANCHO_DIR/migrations/base.sql"
+  ok "schema imported from migrations/base.sql"
+else
+  warn "schema already exists — leaving your data alone"
+fi
+BOT_SAFE="$(echo "$BOT_NAME" | tr '[:upper:]' '[:lower:]' | tr ' ' '_')"
+mysql -u root "$DB_NAME" -e "UPDATE users SET name='$BOT_NAME', safe_name='$BOT_SAFE' WHERE id=1;" || true
+ok "bot renamed to '$BOT_NAME' (they live in every chat now 😎)"
+
+# ─── 6. geo database (player flags) ──────────────────────────────────────────
+step "🌍 grabbing GeoLite2 db (so player flags actually work)"
+mkdir -p "$DATA_DIR"
+MMDB="$DATA_DIR/GeoLite2-City.mmdb"
+if [[ ! -f "$MMDB" ]]; then
+  if curl -fsSL -o "$MMDB" "https://github.com/P3TERX/GeoLite.mmdb/raw/download/GeoLite2-City.mmdb"; then
+    ok "GeoLite2-City.mmdb downloaded"
+  else
+    warn "couldn't download GeoLite2 — flags may be wrong, not fatal. drop one at $MMDB later"
+  fi
+else
+  ok "GeoLite2 already present"
+fi
+
+# ─── 7. ssl certs ────────────────────────────────────────────────────────────
+step "🔐 sorting out SSL"
+CERT_PATH=""; KEY_PATH=""
+case "$SSL_MODE" in
+  1)
+    echo -e "  ${B}certbot is about to ask you to create a DNS TXT record.${R}"
+    echo -e "  ${DIM}go to your DNS provider, add the _acme-challenge TXT record it shows you,"
+    echo -e "  wait a minute for propagation, THEN press enter in certbot.${R}\n"
+    if certbot certonly --manual --preferred-challenges dns \
+         -d "$DOMAIN" -d "*.$DOMAIN" \
+         --agree-tos --register-unsafely-without-email; then
+      CERT_PATH="/etc/letsencrypt/live/$DOMAIN/fullchain.pem"
+      KEY_PATH="/etc/letsencrypt/live/$DOMAIN/privkey.pem"
+      ok "wildcard cert issued for *.$DOMAIN 🔥"
+    else
+      warn "certbot failed — falling back to self-signed so the install can finish"
+      SSL_MODE=2
+    fi
+    ;;
+esac
+if [[ "$SSL_MODE" == "2" ]]; then
+  openssl req -x509 -newkey rsa:2048 -sha256 -days 3650 -nodes \
+    -keyout "$CERT_DIR/key.pem" -out "$CERT_DIR/cert.pem" \
+    -subj "/CN=*.$DOMAIN" \
+    -addext "subjectAltName=DNS:$DOMAIN,DNS:*.$DOMAIN" >/dev/null 2>&1
+  CERT_PATH="$CERT_DIR/cert.pem"; KEY_PATH="$CERT_DIR/key.pem"
+  ok "self-signed wildcard cert generated"
+  warn "players MUST install $CERT_DIR/cert.pem as a Trusted Root cert on their PC or osu! will refuse to connect"
+fi
+if [[ "$SSL_MODE" == "3" ]]; then
+  ask "path to your fullchain cert" "";  CERT_PATH="$REPLY_VAL"
+  ask "path to your private key" "";     KEY_PATH="$REPLY_VAL"
+  [[ -f "$CERT_PATH" && -f "$KEY_PATH" ]] || warn "those files don't exist yet — nginx will fail to start until they do"
+fi
+
+# ─── 8. bancho.py config (.env) ──────────────────────────────────────────────
+step "⚙️  writing bancho.py config (.env)"
+cat > "$BANCHO_DIR/.env" <<ENV
+# generated by OPS_QuickBuild v$OPS_VERSION for '$SERVER_NAME' 😎
+APP_HOST=127.0.0.1
+APP_PORT=$APP_PORT
+DOMAIN=$DOMAIN
+
+DB_USER=$DB_USER
+DB_PASS=$DB_PASS
+DB_NAME=$DB_NAME
+DB_HOST=127.0.0.1
+DB_PORT=3306
+DB_USE_SSL=false
+
+REDIS_USER=default
+REDIS_PASS=
+REDIS_HOST=127.0.0.1
+REDIS_PORT=6379
+REDIS_DB=0
+
+OSU_API_KEY=$OSU_API_KEY
+
+DATA_DIRECTORY=$DATA_DIR
+SSL_CERT_PATH=$CERT_PATH
+SSL_KEY_PATH=$KEY_PATH
+
+MIRROR_SEARCH_ENDPOINT=https://catboy.best/api/search
+MIRROR_DOWNLOAD_ENDPOINT=https://catboy.best/d
+
+COMMAND_PREFIX=!
+SEASONAL_BGS=
+MENU_ICON_URL=
+MENU_ONCLICK_URL=https://$DOMAIN
+
+DATADOG_API_KEY=
+DATADOG_APP_KEY=
+
+DEBUG=False
+REDIRECT_OSU_URLS=True
+PP_CACHED_ACCS=90,95,98,99,100
+DISALLOWED_NAMES=
+DISALLOWED_PASSWORDS=password,abc123
+DISALLOW_OLD_CLIENTS=True
+DISALLOW_INGAME_REGISTRATION=True
+
+CAPTCHA_PROVIDER=
+CAPTCHA_SECRET=
+WEB_SESSION_COOKIE_SECURE=True
+
+DISCORD_AUDIT_LOG_WEBHOOK=
+DISCORD_INVITE=
+
+AUTOMATICALLY_REPORT_PROBLEMS=False
+LOG_WITH_COLORS=True
+TUNNEL_TOKEN=
+MMD_DB_PATH=$MMDB
+DEVELOPER_MODE=False
+ENV
+[[ -f "$BANCHO_DIR/logging.yaml.example" && ! -f "$BANCHO_DIR/logging.yaml" ]] \
+  && cp "$BANCHO_DIR/logging.yaml.example" "$BANCHO_DIR/logging.yaml"
+ok ".env written (db creds baked in, registration in-game is OFF — accounts come from your list)"
+
+# ─── 9. nginx ────────────────────────────────────────────────────────────────
+step "🌐 configuring nginx (routes osu/c/ce/c4/c5/c6/a/b/api/assets subdomains → bancho)"
+DOMAIN_ESC="${DOMAIN//./\\.}"
+cat > "/etc/nginx/sites-available/$SLUG.conf" <<NGINX
+# generated by OPS_QuickBuild for $SERVER_NAME
+upstream ${SLUG}_bancho {
+    server 127.0.0.1:$APP_PORT;
+}
+
+server {
+    listen 80;
+    server_name $DOMAIN *.$DOMAIN;
+    return 301 https://\$host\$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    server_name ~^(?:osu|a|b|api|assets|c[e4-6]?)\.$DOMAIN_ESC\$ $DOMAIN;
+
+    ssl_certificate     $CERT_PATH;
+    ssl_certificate_key $KEY_PATH;
+
+    client_max_body_size 64m;
+
+    location / {
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header Host \$http_host;
+        proxy_redirect off;
+        proxy_pass http://${SLUG}_bancho;
+    }
+}
+NGINX
+ln -sf "/etc/nginx/sites-available/$SLUG.conf" "/etc/nginx/sites-enabled/$SLUG.conf"
+rm -f /etc/nginx/sites-enabled/default
+if nginx -t >/dev/null 2>&1; then
+  systemctl reload nginx
+  ok "nginx locked and loaded"
+else
+  warn "nginx config test failed (probably missing certs) — fix certs then: nginx -t && systemctl reload nginx"
+fi
+
+# ─── 10. ops scripts + custom pp hook ────────────────────────────────────────
+step "🧮 installing ops toolkit (pp recalc, leaderboard, account importer, pp hook)"
+cp "$OPS_ROOT/scripts/import_accounts.py" "$OPS_DIR/"
+cp "$OPS_ROOT/scripts/recalc_pp.py"       "$OPS_DIR/"
+cp "$OPS_ROOT/scripts/leaderboard.py"     "$OPS_DIR/"
+cp "$OPS_ROOT/scripts/patch_pp_hook.py"   "$OPS_DIR/"
+if [[ ! -f "$BANCHO_DIR/ops_custom_pp.py" ]]; then
+  cp "$OPS_ROOT/pp/custom_pp.py" "$BANCHO_DIR/ops_custom_pp.py"
+  ok "custom pp profile installed → $BANCHO_DIR/ops_custom_pp.py (default = bancho's current pp, untouched)"
+else
+  warn "ops_custom_pp.py already exists — keeping your custom pp math"
+fi
+if "$VENV_PY" "$OPS_DIR/patch_pp_hook.py" "$BANCHO_DIR"; then
+  ok "live pp hook patched into bancho.py — score submits route through your pp profile 😎"
+else
+  warn "couldn't patch the live pp hook (bancho.py layout changed?) — live scores use stock pp, but recalc-pp.sh still applies your custom math"
+fi
+
+# wrapper scripts
+cat > "$INSTALL_DIR/start_server.sh" <<SH
+#!/usr/bin/env bash
+# start $SERVER_NAME — run me inside tmux/screen
+cd "$BANCHO_DIR"
+set -a; source ./.env; set +a
+exec "$VENV_PY" main.py
+SH
+cat > "$INSTALL_DIR/recalc-pp.sh" <<SH
+#!/usr/bin/env bash
+# recalculate pp for EVERY score + rebuild stats/leaderboards using your custom pp profile
+exec "$VENV_PY" "$OPS_DIR/recalc_pp.py" --bancho "$BANCHO_DIR" "\$@"
+SH
+cat > "$INSTALL_DIR/leaderboard.sh" <<SH
+#!/usr/bin/env bash
+# show the leaderboard, e.g.: ./leaderboard.sh --mode osu --top 25
+exec "$VENV_PY" "$OPS_DIR/leaderboard.py" --bancho "$BANCHO_DIR" "\$@"
+SH
+cat > "$INSTALL_DIR/import-accounts.sh" <<SH
+#!/usr/bin/env bash
+# import accounts from a username:password file, e.g.: ./import-accounts.sh accounts.txt
+exec "$VENV_PY" "$OPS_DIR/import_accounts.py" --bancho "$BANCHO_DIR" --accounts "\$1"
+SH
+chmod +x "$INSTALL_DIR"/*.sh
+ok "wrapper scripts ready: start_server.sh, recalc-pp.sh, leaderboard.sh, import-accounts.sh"
+
+# ─── 11. accounts ────────────────────────────────────────────────────────────
+step "👥 importing accounts"
+if [[ -n "$ACCOUNTS_FILE" ]]; then
+  "$VENV_PY" "$OPS_DIR/import_accounts.py" --bancho "$BANCHO_DIR" --accounts "$ACCOUNTS_FILE" \
+    || warn "account import hit issues — check output above, rerun with ./import-accounts.sh"
+else
+  info "no accounts file given — import later: $INSTALL_DIR/import-accounts.sh yourfile.txt"
+fi
+
+# ─── 12. report ──────────────────────────────────────────────────────────────
+step "🧾 writing the report + final instructions"
+SERVER_IP="$(curl -fsS -4 https://api.ipify.org 2>/dev/null || hostname -I | awk '{print $1}')"
+cat > "$REPORT" <<TXT
+OPS_QuickBuild report — $SERVER_NAME
+generated: $(date -u '+%Y-%m-%d %H:%M UTC')
+
+domain:        $DOMAIN
+install dir:   $INSTALL_DIR
+bancho.py:     $BANCHO_DIR
+app port:      $APP_PORT (behind nginx)
+db:            $DB_NAME / user: $DB_USER / pass: $DB_PASS
+ssl cert:      $CERT_PATH
+ssl key:       $KEY_PATH
+
+start:         tmux new -s $SLUG $INSTALL_DIR/start_server.sh
+recalc pp:     $INSTALL_DIR/recalc-pp.sh
+leaderboard:   $INSTALL_DIR/leaderboard.sh --mode osu
+import users:  $INSTALL_DIR/import-accounts.sh file.txt
+custom pp:     edit $BANCHO_DIR/ops_custom_pp.py, then recalc + restart
+
+DNS records needed (all type A, pointing to $SERVER_IP):
+  @  osu  c  ce  c4  c5  c6  a  b  api  assets
+
+client connect: osu!.exe -devserver $DOMAIN
+TXT
+chmod 600 "$REPORT"
+ok "report saved (with db creds): $REPORT"
+
+# ─── final output ────────────────────────────────────────────────────────────
+echo -e "\n${GRN}${B}  ══════════════════════════════════════════════════════════${R}"
+echo -e "  ${GRN}${B}🎉 WE'RE DONE. '$SERVER_NAME' IS BUILT. absolute cinema 😎🔥${R}"
+echo -e "${GRN}${B}  ══════════════════════════════════════════════════════════${R}\n"
+
+echo -e "  ${B}${PNK}📡 1) DNS — the 10% you gotta do yourself:${R}"
+echo -e "     add these ${B}A records${R} at your DNS provider, all pointing to ${B}$SERVER_IP${R}:"
+echo -e "     ${CYN}@   osu   c   ce   c4   c5   c6   a   b   api   assets${R}"
+echo -e "     ${DIM}(a wildcard record '*' → $SERVER_IP also works and is easier)${R}\n"
+
+echo -e "  ${B}${PNK}🧱 2) firewall:${R} open ports ${B}80${R} + ${B}443${R}  ${DIM}(ufw allow 80,443/tcp)${R}\n"
+
+echo -e "  ${B}${PNK}🚀 3) START THE SERVER:${R}"
+echo -e "     ${GRN}${B}tmux new -s $SLUG $INSTALL_DIR/start_server.sh${R}"
+echo -e "     ${DIM}detach: ctrl+b then d  •  reattach: tmux attach -t $SLUG${R}"
+echo -e "     ${DIM}(screen enjoyers: screen -S $SLUG $INSTALL_DIR/start_server.sh)${R}\n"
+
+echo -e "  ${B}${PNK}🎮 4) players connect with:${R}"
+echo -e "     ${B}osu!.exe -devserver $DOMAIN${R}   ${DIM}(add it to the shortcut target)${R}\n"
+
+if [[ "$SSL_MODE" == "2" ]]; then
+  echo -e "  ${YLW}${B}⚠️  self-signed cert mode:${R} every player must install ${B}$CERT_DIR/cert.pem${R}"
+  echo -e "     ${DIM}on Windows: double-click → Install Certificate → Local Machine → Trusted Root CAs${R}\n"
+fi
+
+echo -e "  ${B}${PNK}🛠️  daily driver commands:${R}"
+echo -e "     ${CYN}$INSTALL_DIR/leaderboard.sh --mode osu --top 25${R}   ${DIM}# who's cooking${R}"
+echo -e "     ${CYN}$INSTALL_DIR/recalc-pp.sh${R}                          ${DIM}# recalc ALL pp + rebuild rankings${R}"
+echo -e "     ${CYN}$INSTALL_DIR/import-accounts.sh more_users.txt${R}     ${DIM}# add more homies${R}"
+echo -e "     ${CYN}nano $BANCHO_DIR/ops_custom_pp.py${R}    ${DIM}# change pp math, then recalc + restart${R}\n"
+
+echo -e "  ${DIM}full details + db password: $REPORT${R}"
+echo -e "  ${B}gl hf, don't get farmed 🫡😎${R}\n"

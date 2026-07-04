@@ -1,0 +1,11 @@
+# OPS_QuickBuild accounts file 👥
+# one account per line:  username:password
+# add ':admin' as a third field to make that account staff (mod/admin/dev privs)
+#
+# username rules: 2-15 chars, letters/numbers/spaces/_-[]
+# password rules: 3+ chars (players log in with these in osu!stable)
+
+cookiezi:727isnotamod:admin
+peppy:teamnice
+WhiteCat:speedfarm123
+mrekk:lazerwho
