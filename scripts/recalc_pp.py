@@ -132,8 +132,10 @@ def main() -> int:
     try:
         import ops_custom_pp
         modify_pp = getattr(ops_custom_pp, "modify_pp", lambda pp, ctx: pp)
+        merge_rx = bool(getattr(ops_custom_pp, "MERGE_RELAX_INTO_VANILLA", False))
     except Exception:
         modify_pp = lambda pp, ctx: pp  # noqa: E731
+        merge_rx = False
         print(f"{YLW}⚠️  no ops_custom_pp.py found — using pure bancho pp{R}")
 
     conn = pymysql.connect(
@@ -249,6 +251,23 @@ def main() -> int:
         bucket = per_player[(userid, mode)]
         if len(bucket) < TOP_N:
             bucket.append((float(pp), float(acc)))
+
+    # MERGE_RELAX_INTO_VANILLA: fold relax scores (already pp-adjusted by the
+    # profile) into the vanilla top-100s, so the main boards rank everyone
+    # together. the separate relax boards are left untouched.
+    if merge_rx:
+        print(f"  {CYN}🔹 folding relax scores into the vanilla leaderboards{R}")
+        for vn_mode in (0, 1, 2):
+            rx_mode = vn_mode + 4
+            users = {uid for (uid, mode) in per_player if mode in (vn_mode, rx_mode)}
+            for uid in users:
+                combined = sorted(
+                    per_player.get((uid, vn_mode), [])
+                    + per_player.get((uid, rx_mode), []),
+                    key=lambda s: -s[0],
+                )[:TOP_N]
+                if combined:
+                    per_player[(uid, vn_mode)] = combined
 
     stat_updates = []
     for (userid, mode), tops in per_player.items():

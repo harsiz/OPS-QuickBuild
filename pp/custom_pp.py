@@ -25,6 +25,11 @@ from __future__ import annotations
 # quick lever: global multiplier applied to ALL pp. 1.0 = pure bancho.
 PP_MULTIPLIER = 1.0
 
+# fold relax scores into the vanilla leaderboards/totals on recalc (relax pp
+# should usually be discounted in modify_pp if you turn this on). the
+# separate relax boards keep working either way.
+MERGE_RELAX_INTO_VANILLA = False
+
 # handy mod bits if you want mod-based logic
 MOD_HIDDEN = 8
 MOD_HARDROCK = 16

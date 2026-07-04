@@ -6,6 +6,17 @@ the running history of [Auraelia](https://justharsiz.online) (`-devserver justha
 
 ---
 
+## 2026-07-04 — pp v3.1: "one leaderboard" 🤝
+
+full recalc.
+
+- **relax now counts on the main vanilla leaderboard** — everyone ranks
+  together on one board
+- the price of admission: **relax pp is reduced by 65%** (relax keeps 35%
+  of its vanilla-equivalent value)
+- the separate relax leaderboard still exists and is unaffected
+- everything else from v3 unchanged
+
 ## 2026-07-04 — pp system v3: "the rhythm update" 🥁
 
 full recalc. the meta is streams now.
