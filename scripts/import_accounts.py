@@ -21,14 +21,16 @@ from pathlib import Path
 
 R = "\033[0m"; B = "\033[1m"; GRN = "\033[32m"; YLW = "\033[33m"; RED = "\033[31m"; CYN = "\033[36m"
 
-# bancho.py privilege bits
-PRIV_UNRESTRICTED = 1
-PRIV_VERIFIED = 2
-PRIV_MODERATOR = 16
-PRIV_ADMINISTRATOR = 32
-PRIV_DEVELOPER = 64
+# bancho.py privilege bits (app/constants/privileges.py)
+PRIV_UNRESTRICTED = 1 << 0
+PRIV_VERIFIED = 1 << 1
+PRIV_NOMINATOR = 1 << 11      # can manage map ranked status (!map)
+PRIV_MODERATOR = 1 << 12
+PRIV_ADMINISTRATOR = 1 << 13
+PRIV_DEVELOPER = 1 << 14
 PRIV_NORMAL = PRIV_UNRESTRICTED | PRIV_VERIFIED
-PRIV_ADMIN = PRIV_NORMAL | PRIV_MODERATOR | PRIV_ADMINISTRATOR | PRIV_DEVELOPER
+PRIV_ADMIN = (PRIV_NORMAL | PRIV_NOMINATOR | PRIV_MODERATOR
+              | PRIV_ADMINISTRATOR | PRIV_DEVELOPER)
 
 USERNAME_RE = re.compile(r"^[\w \[\]-]{2,15}$")
 STAT_MODES = (0, 1, 2, 3, 4, 5, 6, 8)  # vn!std/taiko/catch/mania, rx!std/taiko/catch, ap!std
