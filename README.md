@@ -13,7 +13,7 @@ runs on **Debian / Ubuntu**. players connect with plain **osu!stable** using `-d
 on your Debian/Ubuntu server:
 
 ```bash
-git clone <this repo> OPS_QuickBuild && cd OPS_QuickBuild
+git clone https://github.com/harsiz/OPS-QuickBuild.git OPS_QuickBuild && cd OPS_QuickBuild
 chmod +x ops-quickbuild
 
 # optional but recommended: prep your accounts first
