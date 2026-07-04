@@ -119,14 +119,26 @@ ok "git, nginx, mariadb, redis, certbot, tmux — all installed"
 systemctl enable --now mariadb redis-server nginx >/dev/null 2>&1
 ok "mariadb + redis + nginx are up and enabled on boot"
 
-# ─── 2. uv (python package manager) ──────────────────────────────────────────
-step "🐍 installing uv (python toolchain)"
+# ─── 2. uv + rust toolchain ──────────────────────────────────────────────────
+step "🐍 installing uv + rust (rust compiles the pp calculator 🦀)"
 if ! command -v uv >/dev/null 2>&1; then
   curl -LsSf https://astral.sh/uv/install.sh | sh >/dev/null 2>&1
   export PATH="$HOME/.local/bin:$PATH"
 fi
 command -v uv >/dev/null 2>&1 || die "uv didn't install, check your network"
 ok "uv ready: $(uv --version)"
+
+# akatsuki-pp-py (bancho's pp calculator) often has no prebuilt wheel and
+# must be compiled from rust source — that needs cargo in PATH.
+if ! command -v cargo >/dev/null 2>&1; then
+  info "no cargo found — grabbing rust via rustup (one-time, takes a min)"
+  curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable >/dev/null 2>&1 \
+    || die "rustup install failed — check network, then rerun me"
+fi
+[[ -f "$HOME/.cargo/env" ]] && source "$HOME/.cargo/env"
+export PATH="$HOME/.cargo/bin:$PATH"
+command -v cargo >/dev/null 2>&1 || die "cargo still not in PATH after rustup?? run: source ~/.cargo/env, then rerun me"
+ok "rust ready: $(cargo --version | awk '{print $1, $2}')"
 
 # ─── 3. clone bancho.py ──────────────────────────────────────────────────────
 step "⬇️  pulling bancho.py (the actual server software)"
@@ -141,7 +153,8 @@ ok "bancho.py source in place"
 # ─── 4. python deps ──────────────────────────────────────────────────────────
 step "🧪 installing python dependencies (uv sync — grabs the pp calculator too)"
 cd "$BANCHO_DIR"
-uv sync --no-install-project >/dev/null 2>&1 || uv sync >/dev/null
+info "if the pp calculator compiles from source this can take a few mins — it's not stuck, rust is just cooking 🦀"
+uv sync --no-install-project >/dev/null 2>&1 || uv sync --no-install-project || uv sync
 uv pip install --python "$BANCHO_DIR/.venv/bin/python" pymysql >/dev/null
 VENV_PY="$BANCHO_DIR/.venv/bin/python"
 ok "venv built, deps locked, pymysql added for the ops scripts"
