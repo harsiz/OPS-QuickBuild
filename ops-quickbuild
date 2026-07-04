@@ -79,6 +79,8 @@ ask "path to your accounts file (username:password per line, blank = skip)" "-";
 if [[ -n "$ACCOUNTS_FILE" && ! -f "$ACCOUNTS_FILE" ]]; then
   die "accounts file '$ACCOUNTS_FILE' doesn't exist 💀 (make it or pass '-' to skip)"
 fi
+# resolve to absolute path NOW — the installer cd's around later
+[[ -n "$ACCOUNTS_FILE" ]] && ACCOUNTS_FILE="$(readlink -f "$ACCOUNTS_FILE")"
 ask "osu! api v1 key (optional, helps with beatmap lookups — blank is fine)" "-"; OSU_API_KEY="$REPLY_VAL"
 [[ "$OSU_API_KEY" == "-" ]] && OSU_API_KEY=""
 
@@ -113,7 +115,7 @@ step "📦 installing system packages (this is the boring part, hang tight)"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y -qq git curl ca-certificates build-essential \
-  nginx mariadb-server redis-server certbot tmux openssl >/dev/null
+  nginx mariadb-server redis-server certbot tmux openssl dnsutils >/dev/null
 ok "git, nginx, mariadb, redis, certbot, tmux — all installed"
 
 systemctl enable --now mariadb redis-server nginx >/dev/null 2>&1
@@ -164,6 +166,7 @@ step "🗄️  creating the database (users, scores, maps, stats — the whole s
 mysql -u root <<SQL
 CREATE DATABASE IF NOT EXISTS \`$DB_NAME\` CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
 CREATE USER IF NOT EXISTS '$DB_USER'@'localhost' IDENTIFIED BY '$DB_PASS';
+ALTER USER '$DB_USER'@'localhost' IDENTIFIED BY '$DB_PASS';
 GRANT ALL PRIVILEGES ON \`$DB_NAME\`.* TO '$DB_USER'@'localhost';
 FLUSH PRIVILEGES;
 SQL
@@ -196,9 +199,12 @@ step "🔐 sorting out SSL"
 CERT_PATH=""; KEY_PATH=""
 case "$SSL_MODE" in
   1)
-    echo -e "  ${B}certbot is about to ask you to create a DNS TXT record.${R}"
-    echo -e "  ${DIM}go to your DNS provider, add the _acme-challenge TXT record it shows you,"
-    echo -e "  wait a minute for propagation, THEN press enter in certbot.${R}\n"
+    echo -e "  ${B}certbot is about to ask you to create TWO DNS TXT records${R} (one for the"
+    echo -e "  ${B}domain, one for the wildcard — SAME name, different values).${R}"
+    echo -e "  ${DIM}• add the first TXT record it shows, press enter, it shows a SECOND one"
+    echo -e "  • add that too — BOTH records must exist at the same time, don't delete the first!"
+    echo -e "  • before the final enter, verify with:  dig +short TXT _acme-challenge.$DOMAIN"
+    echo -e "    (you should see BOTH values) — DNS can take a few mins to propagate, be patient${R}\n"
     if certbot certonly --manual --preferred-challenges dns \
          -d "$DOMAIN" -d "*.$DOMAIN" \
          --agree-tos --register-unsafely-without-email; then
@@ -360,6 +366,8 @@ SH
 cat > "$INSTALL_DIR/recalc-pp.sh" <<SH
 #!/usr/bin/env bash
 # recalculate pp for EVERY score + rebuild stats/leaderboards using your custom pp profile
+cd "$BANCHO_DIR"
+set -a; source ./.env; set +a
 exec "$VENV_PY" "$OPS_DIR/recalc_pp.py" --bancho "$BANCHO_DIR" "\$@"
 SH
 cat > "$INSTALL_DIR/leaderboard.sh" <<SH

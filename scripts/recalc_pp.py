@@ -98,12 +98,21 @@ def main() -> int:
     import pymysql
     import redis as redis_lib
 
-    # use bancho.py's own calculator so recalc == live values
+    # use bancho.py's own calculator so recalc == live values.
+    # v5.3+: app/services/performance.py (PerformanceService class)
+    # older: app/usecases/performance.py (module-level function)
     try:
-        from app.usecases.performance import ScoreParams, calculate_performances
+        from app.services.performance import PerformanceService, ScoreParams
+        calculate_performances = PerformanceService().calculate_performances
+    except ImportError:
+        try:
+            from app.usecases.performance import ScoreParams, calculate_performances
+        except Exception as exc:
+            print(f"{RED}💀 couldn't import bancho.py's performance module: {exc}{R}")
+            print(f"{DIM}   (did bancho.py restructure? run me from an up-to-date OPS install){R}")
+            return 1
     except Exception as exc:
-        print(f"{RED}💀 couldn't import bancho.py's performance module: {exc}{R}")
-        print(f"{DIM}   (did bancho.py restructure? run me from an up-to-date OPS install){R}")
+        print(f"{RED}💀 couldn't set up bancho.py's performance service: {exc}{R}")
         return 1
 
     try:
@@ -159,11 +168,13 @@ def main() -> int:
         for (sid, mode, mods, combo, acc, n300, n100, n50, nmiss, ngeki, nkatu,
              userid, _mid) in scores:
             vanilla = mode % 4 if mode != 8 else 0
+            # NOTE: no "acc" here — bancho.py rejects params that set both
+            # accuracy and hit counts, and hit counts are the precise ones.
             params.append(build_score_params(ScoreParams, {
                 "mode": vanilla, "mods": mods, "combo": combo,
                 "n300": n300, "n100": n100, "n50": n50,
                 "nmiss": nmiss, "n_misses": nmiss,  # name differs across versions
-                "ngeki": ngeki, "nkatu": nkatu, "acc": acc,
+                "ngeki": ngeki, "nkatu": nkatu,
             }))
             meta.append((sid, mode, mods, acc, userid))
 

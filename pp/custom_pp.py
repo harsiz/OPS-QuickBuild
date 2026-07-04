@@ -76,8 +76,9 @@ def apply_to_results(results, args=None, kwargs=None):
 
 
 def _apply_one(result, ctx_base):
-    # bancho.py results look like {"performance": {"pp": float, ...}, "difficulty": {...}}
-    # but we stay defensive about the exact shape across versions.
+    # bancho.py v5.3+ returns frozen dataclasses: PerformanceResult(performance=
+    # PerformanceRating(pp=...), ...); older versions returned nested dicts.
+    # we handle both and stay defensive about the exact shape.
     perf = None
     if isinstance(result, dict):
         perf = result.get("performance", result)
@@ -95,6 +96,7 @@ def _apply_one(result, ctx_base):
         try:
             new_pp = float(modify_pp(float(perf.pp), dict(ctx_base)))
             if new_pp >= 0 and new_pp == new_pp:
-                perf.pp = new_pp
+                # object.__setattr__ so frozen dataclasses can be updated too
+                object.__setattr__(perf, "pp", new_pp)
         except Exception:
             pass
