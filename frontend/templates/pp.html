@@ -21,8 +21,8 @@
 
   {% if handwritten %}
   <div class="notification is-warning">
-    ⚠️ the current pp profile was hand-written (not made by this builder). the form below
-    shows defaults — saving will <b>replace</b> the hand-written profile (a .bak is kept).
+    ⚠️ the current pp profile was hand-written (not made by this builder). the form shows
+    defaults — saving will <b>replace</b> the hand-written profile (a .bak is kept).
   </div>
   {% endif %}
 
@@ -32,6 +32,18 @@
     <pre style="background: rgba(0,0,0,.3); padding: 10px; font-size: 12px;">{{ log_tail }}</pre>
   </div>
   {% endif %}
+
+  <div class="box">
+    <h2 class="subtitle">✨ presets <span class="is-size-7" style="opacity:.6;">(fills the form — nothing is saved until you hit Save and Update)</span></h2>
+    <div class="buttons">
+      <button type="button" class="button is-small" onclick="applyPreset('bancho')">🏛️ bancho classic (1x)</button>
+      <button type="button" class="button is-small" onclick="applyPreset('auraelia_v3')">🥁 auraelia v3</button>
+      <button type="button" class="button is-small" onclick="applyPreset('dt_priority')">⏩ DT priority (v2)</button>
+      <button type="button" class="button is-small" onclick="applyPreset('farm_heaven')">🌾 farm heaven</button>
+      <button type="button" class="button is-small" onclick="applyPreset('stream_dream')">🥁 stream dream</button>
+      <button type="button" class="button is-small" onclick="applyPreset('tryhard')">🏆 tryhard (competitive)</button>
+    </div>
+  </div>
 
   <form method="post" action="/admin/pp/save"
         onsubmit="return confirm('save this pp system, recalc ALL scores and restart the game server?');">
@@ -61,15 +73,17 @@
             </select>
           </div>
         </div>
+        <div class="control">
+          <label class="label is-small">custom curve exp <span style="opacity:.5;">(blank = use shape; &lt;1 front, &gt;1 back)</span></label>
+          <input class="input" type="number" step="0.05" name="curve_exp" value="{{ cfg.curve_exp or '' }}" placeholder="e.g. 0.45">
+        </div>
       </div>
-      <p class="is-size-7" style="opacity:.6;">every score's bancho pp is multiplied by a value between
-      min and max, based on how good the play is (its raw pp vs the "max reached at" point).</p>
     </div>
 
     <div class="box">
       <h2 class="subtitle">🎛️ mod rules</h2>
-      {% set rules = cfg.mod_rules + [{}, {}, {}] %}
-      {% for rule in rules[:6] %}
+      {% set rules = cfg.mod_rules + [{}, {}, {}, {}] %}
+      {% for rule in rules[:8] %}
       <div class="field is-grouped">
         <div class="control">
           <div class="select">
@@ -95,36 +109,117 @@
         </div>
       </div>
       {% endfor %}
-      <p class="is-size-7" style="opacity:.6;">e.g. "EZ +45 scales with play value" = up to 45% more pp with EZ.
-      negative % = nerf. leave the mod dropdown empty to skip a row. one rule per mod.</p>
+      <p class="is-size-7" style="opacity:.6;">negative % = nerf. "scales with play value" means the full
+      % only applies to plays at the top of the base curve. one rule per mod, empty rows skipped.</p>
     </div>
 
     <div class="box">
-      <h2 class="subtitle">🎯 skill-based rules <span class="is-size-7" style="opacity:.6;">(uses the calculator's aim/speed breakdown per play)</span></h2>
+      <h2 class="subtitle">🎯 skill-based rules <span class="is-size-7" style="opacity:.6;">(from the calculator's per-play aim/speed breakdown)</span></h2>
       <div class="field is-grouped is-grouped-multiline">
         <div class="control">
-          <label class="label is-small">stream/burst map buff (max +%)</label>
+          <label class="label is-small">stream/burst buff (max +%)</label>
           <input class="input" type="number" step="1" name="stream_buff" value="{{ cfg.stream_buff }}">
         </div>
         <div class="control">
           <label class="label is-small">aim map nerf (max -%)</label>
           <input class="input" type="number" step="1" name="aim_nerf" value="{{ cfg.aim_nerf }}">
         </div>
+        <div class="control">
+          <label class="label is-small">neutral speed share <span style="opacity:.5;">(default 0.40)</span></label>
+          <input class="input" type="number" step="0.01" name="speed_neutral" value="{{ cfg.speed_neutral }}">
+        </div>
+        <div class="control">
+          <label class="label is-small">skew range <span style="opacity:.5;">(smaller = more sensitive)</span></label>
+          <input class="input" type="number" step="0.01" name="speed_range" value="{{ cfg.speed_range }}">
+        </div>
       </div>
-      <p class="is-size-7" style="opacity:.6;">set both to 0 to disable. the buff/nerf scales with how
-      speed- or aim-dominant the map actually is.</p>
     </div>
 
     <div class="box">
-      <h2 class="subtitle">🧢 limits</h2>
+      <h2 class="subtitle">⭐ star rating rules <span class="is-size-7" style="opacity:.6;">(0 = off)</span></h2>
+      <div class="field is-grouped is-grouped-multiline">
+        <div class="control">
+          <label class="label is-small">bonus % per star above…</label>
+          <input class="input" type="number" step="1" name="star_bonus_per" value="{{ cfg.star_bonus_per }}">
+        </div>
+        <div class="control">
+          <label class="label is-small">…this many stars</label>
+          <input class="input" type="number" step="0.1" name="star_bonus_from" value="{{ cfg.star_bonus_from }}">
+        </div>
+        <div class="control">
+          <label class="label is-small">bonus cap (%)</label>
+          <input class="input" type="number" step="5" name="star_bonus_cap" value="{{ cfg.star_bonus_cap }}">
+        </div>
+        <div class="control">
+          <label class="label is-small">farm nerf (-%) below…</label>
+          <input class="input" type="number" step="1" name="low_star_nerf" value="{{ cfg.low_star_nerf }}">
+        </div>
+        <div class="control">
+          <label class="label is-small">…this many stars</label>
+          <input class="input" type="number" step="0.1" name="low_star_below" value="{{ cfg.low_star_below }}">
+        </div>
+      </div>
+      <p class="is-size-7" style="opacity:.6;">e.g. "10% per star above 6, cap 50%" makes 7★ plays +10%,
+      8★ +20%… and "30% below 3" guts 2★ farm maps.</p>
+    </div>
+
+    <div class="box">
+      <h2 class="subtitle">💯 accuracy &amp; miss rules <span class="is-size-7" style="opacity:.6;">(0 = off)</span></h2>
+      <div class="field is-grouped is-grouped-multiline">
+        <div class="control">
+          <label class="label is-small">high-acc bonus (max +% at 100%)</label>
+          <input class="input" type="number" step="1" name="acc_bonus_max" value="{{ cfg.acc_bonus_max }}">
+        </div>
+        <div class="control">
+          <label class="label is-small">bonus starts at (acc %)</label>
+          <input class="input" type="number" step="0.5" name="acc_bonus_from" value="{{ cfg.acc_bonus_from }}">
+        </div>
+        <div class="control">
+          <label class="label is-small">low-acc penalty (-%)</label>
+          <input class="input" type="number" step="1" name="acc_penalty" value="{{ cfg.acc_penalty }}">
+        </div>
+        <div class="control">
+          <label class="label is-small">…when acc below (%)</label>
+          <input class="input" type="number" step="0.5" name="acc_penalty_below" value="{{ cfg.acc_penalty_below }}">
+        </div>
+        <div class="control">
+          <label class="label is-small">miss penalty (-% per miss)</label>
+          <input class="input" type="number" step="0.5" name="miss_penalty" value="{{ cfg.miss_penalty }}">
+        </div>
+        <div class="control">
+          <label class="label is-small">miss penalty cap (-%)</label>
+          <input class="input" type="number" step="5" name="miss_penalty_cap" value="{{ cfg.miss_penalty_cap }}">
+        </div>
+      </div>
+    </div>
+
+    <div class="box">
+      <h2 class="subtitle">🧢 limits &amp; global</h2>
       <div class="field is-grouped is-grouped-multiline">
         <div class="control">
           <label class="label is-small">pp cap per play (0 = no cap)</label>
           <input class="input" type="number" step="50" name="cap" value="{{ cfg.cap or 0 }}">
         </div>
         <div class="control">
-          <label class="label is-small">relax multiplier (1.0 = same as vanilla)</label>
+          <label class="label is-small">cap style</label>
+          <div class="select">
+            <select name="cap_mode">
+              <option value="hard" {{ 'selected' if cfg.cap_mode == 'hard' }}>hard cap (flat wall)</option>
+              <option value="soft" {{ 'selected' if cfg.cap_mode == 'soft' }}>softcap (diminishing returns past it)</option>
+            </select>
+          </div>
+        </div>
+        <div class="control">
+          <label class="label is-small">softcap exponent <span style="opacity:.5;">(lower = harsher)</span></label>
+          <input class="input" type="number" step="0.05" name="soft_exp" value="{{ cfg.soft_exp }}">
+        </div>
+        <div class="control">
+          <label class="label is-small">relax multiplier</label>
           <input class="input" type="number" step="0.05" name="relax_factor" value="{{ cfg.relax_factor }}">
+        </div>
+        <div class="control">
+          <label class="label is-small">final global multiplier</label>
+          <input class="input" type="number" step="0.05" name="final_mult" value="{{ cfg.final_mult }}">
         </div>
       </div>
     </div>
@@ -135,9 +230,58 @@
   </form>
 
   <p class="is-size-7" style="opacity:.6; margin-top: 12px;">
-    saving generates the profile file, backs up the old one, recalculates <b>every score</b>,
-    rebuilds totals + leaderboards, and restarts the game server — all automatic, takes a few
-    minutes. players get briefly disconnected by the restart and can rejoin immediately.
+    order of operations: base curve → mod rules → stream/aim skew → star rules → acc rules →
+    miss penalty → relax → final multiplier → cap. saving backs up the old profile, recalcs
+    <b>every score</b>, rebuilds leaderboards and restarts the game server automatically.
   </p>
 </div>
+
+<script>
+const PRESET_BASE = {
+  base_min: 1.0, base_max: 1.0, full_at: 500, curve: 'linear', curve_exp: '',
+  stream_buff: 0, aim_nerf: 0, speed_neutral: 0.40, speed_range: 0.25,
+  acc_bonus_max: 0, acc_bonus_from: 95, acc_penalty: 0, acc_penalty_below: 85,
+  miss_penalty: 0, miss_penalty_cap: 30,
+  star_bonus_per: 0, star_bonus_from: 6, star_bonus_cap: 50,
+  low_star_nerf: 0, low_star_below: 3,
+  cap: 0, cap_mode: 'hard', soft_exp: 0.8, relax_factor: 1.0, final_mult: 1.0,
+};
+const PRESETS = {
+  bancho:       { fields: {}, mods: [] },
+  auraelia_v3:  { fields: { base_min: 1.5, base_max: 3.5, curve: 'front', stream_buff: 50,
+                            aim_nerf: 15, cap: 4000, relax_factor: 0.35 },
+                  mods: [[2, 45, 'ramp']] },
+  dt_priority:  { fields: { base_min: 3.5, base_max: 5, curve: 'front', cap: 4000,
+                            relax_factor: 0.75 },
+                  mods: [[64, 75, 'ramp']] },
+  farm_heaven:  { fields: { base_min: 4, base_max: 8, full_at: 400, curve: 'front',
+                            stream_buff: 25, relax_factor: 0.5 },
+                  mods: [[64, 30, 'flat'], [8, 10, 'flat']] },
+  stream_dream: { fields: { base_min: 2, base_max: 4, full_at: 450, curve: 'front',
+                            stream_buff: 80, aim_nerf: 30, cap: 3000, relax_factor: 0.35 },
+                  mods: [[64, 20, 'ramp']] },
+  tryhard:      { fields: { base_min: 0.9, base_max: 1.4, full_at: 600, acc_bonus_max: 20,
+                            acc_bonus_from: 96, acc_penalty: 25, acc_penalty_below: 85,
+                            miss_penalty: 3, miss_penalty_cap: 30, cap: 1200,
+                            cap_mode: 'soft', relax_factor: 0.3, low_star_nerf: 40,
+                            low_star_below: 3 },
+                  mods: [[32, 5, 'flat']] },
+};
+
+function applyPreset(name) {
+  const preset = PRESETS[name];
+  const values = Object.assign({}, PRESET_BASE, preset.fields);
+  for (const [key, val] of Object.entries(values)) {
+    const el = document.querySelector(`[name="${key}"]`);
+    if (el) el.value = val;
+  }
+  const bits = document.querySelectorAll('select[name="mod_bit"]');
+  const pcts = document.querySelectorAll('input[name="mod_pct"]');
+  const scales = document.querySelectorAll('select[name="mod_scale"]');
+  bits.forEach((el, i) => { el.value = ''; pcts[i].value = ''; scales[i].value = 'flat'; });
+  (preset.mods || []).forEach((rule, i) => {
+    if (i < bits.length) { bits[i].value = rule[0]; pcts[i].value = rule[1]; scales[i].value = rule[2]; }
+  });
+}
+</script>
 {% endblock %}

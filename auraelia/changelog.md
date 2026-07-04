@@ -6,6 +6,24 @@ the running history of [Auraelia](https://justharsiz.online) (`-devserver justha
 
 ---
 
+## 2026-07-04 — PP builder v2: full tinker mode + presets ✨
+
+/admin/pp got a massive upgrade:
+
+- **6 one-click presets**: bancho classic, auraelia v3, DT priority,
+  farm heaven, stream dream, and tryhard (competitive) — fills the whole
+  form, save when happy
+- **accuracy rules**: high-acc bonus (ramping to 100%), low-acc penalty
+  — works identically live and on recalc (accuracy is now computed from
+  hit counts exactly like osu! does)
+- **miss punishment**: -% per miss with a cap
+- **star rating rules**: bonus per star above a threshold (capped) and a
+  low-star farm nerf
+- **softcap option**: diminishing returns past the cap instead of a wall,
+  with adjustable harshness
+- **fine-tuning**: custom curve exponent, stream/aim neutral point and
+  sensitivity, final global multiplier, more mods (NF, SD, SO)
+
 ## 2026-07-04 — no-code PP builder + server stats 🧮📊
 
 - **/admin/pp — the PP calculation builder**: change the entire pp system

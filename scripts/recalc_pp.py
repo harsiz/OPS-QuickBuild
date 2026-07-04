@@ -56,16 +56,21 @@ def extract_pp(result: object) -> float | None:
 
 
 def extract_components(result: object) -> dict:
-    """Pull the pp component breakdown (aim/speed/acc/fl) out of a result."""
+    """Pull the pp component breakdown + star rating out of a result."""
     if isinstance(result, dict):
         perf = result.get("performance", result)
+        diff = result.get("difficulty")
     else:
         perf = getattr(result, "performance", result)
+        diff = getattr(result, "difficulty", None)
     comps: dict = {}
     for key in ("pp_acc", "pp_aim", "pp_speed", "pp_flashlight"):
         val = perf.get(key) if isinstance(perf, dict) else getattr(perf, key, None)
         if isinstance(val, (int, float)):
             comps[key] = float(val)
+    stars = diff.get("stars") if isinstance(diff, dict) else getattr(diff, "stars", None)
+    if isinstance(stars, (int, float)):
+        comps["stars"] = float(stars)
     return comps
 
 
@@ -192,7 +197,7 @@ def main() -> int:
                 "nmiss": nmiss, "n_misses": nmiss,  # name differs across versions
                 "ngeki": ngeki, "nkatu": nkatu,
             }))
-            meta.append((sid, mode, mods, acc, userid))
+            meta.append((sid, mode, mods, acc, userid, nmiss))
 
         try:
             results = calculate_performances(str(osu_path), params)
@@ -201,7 +206,7 @@ def main() -> int:
             done += len(scores)
             continue
 
-        for (sid, mode, mods, acc, userid), result in zip(meta, results):
+        for (sid, mode, mods, acc, userid, s_nmiss), result in zip(meta, results):
             pp = extract_pp(result)
             if pp is None:
                 errors += 1
@@ -211,6 +216,7 @@ def main() -> int:
                 ctx = {
                     "source": "recalc", "score_id": sid, "user_id": userid,
                     "mode": mode, "mods": mods, "acc": acc, "map_id": map_id,
+                    "nmiss": s_nmiss,
                 }
                 ctx.update(extract_components(result))
                 pp = float(modify_pp(pp, ctx))
