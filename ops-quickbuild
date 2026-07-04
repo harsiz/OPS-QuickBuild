@@ -182,7 +182,12 @@ ok "bot renamed to '$BOT_NAME' (they live in every chat now 😎)"
 
 # ─── 6. geo database (player flags) ──────────────────────────────────────────
 step "🌍 grabbing GeoLite2 db (so player flags actually work)"
-mkdir -p "$DATA_DIR"
+mkdir -p "$DATA_DIR" "$DATA_DIR/avatars" "$DATA_DIR/assets"
+if [[ ! -f "$DATA_DIR/avatars/default.jpg" ]]; then
+  curl -fsSL -o "$DATA_DIR/avatars/default.jpg" "https://a.ppy.sh/" 2>/dev/null \
+    && ok "default avatar downloaded (shown for users with no pfp)" \
+    || warn "couldn't grab a default avatar — drop one at $DATA_DIR/avatars/default.jpg"
+fi
 MMDB="$DATA_DIR/GeoLite2-City.mmdb"
 if [[ ! -f "$MMDB" ]]; then
   if curl -fsSL -o "$MMDB" "https://github.com/P3TERX/GeoLite.mmdb/raw/download/GeoLite2-City.mmdb"; then
@@ -312,7 +317,7 @@ server {
 
 server {
     listen 443 ssl;
-    server_name ~^(?:osu|a|b|api|assets|c[e4-6]?)\.$DOMAIN_ESC\$ $DOMAIN;
+    server_name ~^(?:osu|b|api|c[e4-6]?)\.$DOMAIN_ESC\$ $DOMAIN;
 
     ssl_certificate     $CERT_PATH;
     ssl_certificate_key $KEY_PATH;
@@ -325,6 +330,34 @@ server {
         proxy_set_header Host \$http_host;
         proxy_redirect off;
         proxy_pass http://${SLUG}_bancho;
+    }
+}
+
+# avatars — served straight from disk (drop {user_id}.png/jpg in there)
+server {
+    listen 443 ssl;
+    server_name a.$DOMAIN;
+
+    ssl_certificate     $CERT_PATH;
+    ssl_certificate_key $KEY_PATH;
+
+    location / {
+        root $DATA_DIR/avatars;
+        try_files \$uri \$uri.png \$uri.jpg \$uri.gif \$uri.jpeg \$uri.jfif /default.jpg;
+    }
+}
+
+# static assets (achievement icons etc.)
+server {
+    listen 443 ssl;
+    server_name assets.$DOMAIN;
+
+    ssl_certificate     $CERT_PATH;
+    ssl_certificate_key $KEY_PATH;
+
+    location / {
+        default_type image/png;
+        root $DATA_DIR/assets;
     }
 }
 NGINX

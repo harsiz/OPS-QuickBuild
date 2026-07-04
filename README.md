@@ -88,6 +88,21 @@ after editing: run `./recalc-pp.sh`, then restart the server. rankings update ev
 
 medals for top 3, restricted players hidden, reads straight from the db 🥇
 
+## web frontend + profile pictures (optional add-on)
+
+got a running install? bolt a website onto it — no re-answering questions, it reads your existing config and skips everything that's already done:
+
+```bash
+sudo ./ops-add-frontend /opt/myserver
+tmux new -s myserver-web /opt/myserver/start_frontend.sh
+```
+
+that gives you [guweb](https://github.com/Varkaria/guweb) (the standard bancho.py frontend) at `https://yourdomain.com`: profiles, leaderboards, user settings with **avatar upload**, and an `/admin` panel. it also fixes nginx so `a.yourdomain.com` serves avatars straight from disk (the official bancho.py way).
+
+**profile pictures** work two ways:
+- players log into the site → settings → upload avatar
+- or drop `{user_id}.png` / `.jpg` into `<install>/bancho.py/.data/avatars/` — instant, no restart
+
 ## 📡 the 10% you do yourself (DNS)
 
 point these **A records** at your server's IP (or just one wildcard `*` record):
