@@ -372,10 +372,11 @@ fi
 
 # ─── 10. ops scripts + custom pp hook ────────────────────────────────────────
 step "🧮 installing ops toolkit (pp recalc, leaderboard, account importer, pp hook)"
-cp "$OPS_ROOT/scripts/import_accounts.py" "$OPS_DIR/"
-cp "$OPS_ROOT/scripts/recalc_pp.py"       "$OPS_DIR/"
-cp "$OPS_ROOT/scripts/leaderboard.py"     "$OPS_DIR/"
-cp "$OPS_ROOT/scripts/patch_pp_hook.py"   "$OPS_DIR/"
+cp "$OPS_ROOT/scripts/import_accounts.py"   "$OPS_DIR/"
+cp "$OPS_ROOT/scripts/recalc_pp.py"         "$OPS_DIR/"
+cp "$OPS_ROOT/scripts/leaderboard.py"       "$OPS_DIR/"
+cp "$OPS_ROOT/scripts/patch_pp_hook.py"     "$OPS_DIR/"
+cp "$OPS_ROOT/scripts/patch_relax_merge.py" "$OPS_DIR/"
 if [[ ! -f "$BANCHO_DIR/ops_custom_pp.py" ]]; then
   cp "$OPS_ROOT/pp/custom_pp.py" "$BANCHO_DIR/ops_custom_pp.py"
   ok "custom pp profile installed → $BANCHO_DIR/ops_custom_pp.py (default = bancho's current pp, untouched)"
@@ -387,6 +388,8 @@ if "$VENV_PY" "$OPS_DIR/patch_pp_hook.py" "$BANCHO_DIR"; then
 else
   warn "couldn't patch the live pp hook (bancho.py layout changed?) — live scores use stock pp, but recalc-pp.sh still applies your custom math"
 fi
+"$VENV_PY" "$OPS_DIR/patch_relax_merge.py" "$BANCHO_DIR" \
+  || warn "couldn't install the relax-merge hook (optional feature, everything else works)"
 
 # wrapper scripts
 cat > "$INSTALL_DIR/start_server.sh" <<SH

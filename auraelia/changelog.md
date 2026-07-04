@@ -6,6 +6,18 @@ the running history of [Auraelia](https://justharsiz.online) (`-devserver justha
 
 ---
 
+## 2026-07-04 — pp v3.2: "one leaderboard, for real this time" 🤝⚡
+
+full recalc + score migration.
+
+- relax is now **natively vanilla**: relax plays are stored as vanilla
+  scores with RX as a regular mod (like HD/HR), so the main leaderboard,
+  player totals and **map leaderboards** all update **live** — no more
+  periodic merge, no more separate relax board
+- relax pp reduction (65%, keeps 35%) unchanged from v3.1
+- existing relax scores migrated into the vanilla modes with
+  personal-best dedup (best score per map wins, mods shown honestly)
+
 ## 2026-07-04 — pp v3.1: "one leaderboard" 🤝
 
 full recalc.
