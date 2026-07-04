@@ -8,7 +8,7 @@ runs on **Debian / Ubuntu**. players connect with plain **osu!stable** using `-d
 
 ---
 
-## 🚀 quickstart
+## quickstart
 
 on your Debian/Ubuntu server:
 
@@ -36,7 +36,7 @@ tmux new -s myserver /opt/myserver/start_server.sh
 
 ---
 
-## 🧾 what you feed it
+## what you feed it
 
 | input | what it's for |
 |---|---|
@@ -61,7 +61,7 @@ tmux new -s myserver /opt/myserver/start_server.sh
   - `import-accounts.sh` — add more users any time
 - **report file** `<install>/ops-quickbuild-report.txt` with every credential and command (chmod 600, keep it secret 🤫)
 
-## 🎛️ custom pp calculation
+## custom pp calculation
 
 default = **bancho's current pp system**, byte-for-byte what bancho.py computes (rosu-pp under the hood). zero changes out of the box.
 
@@ -79,7 +79,7 @@ it's applied in two places:
 
 after editing: run `./recalc-pp.sh`, then restart the server. rankings update everywhere (scores → player totals with bancho's weighted top-100 curve → Redis leaderboards).
 
-## 🏆 leaderboard
+## leaderboard
 
 ```bash
 /opt/myserver/leaderboard.sh --mode osu --top 25
@@ -98,7 +98,7 @@ point these **A records** at your server's IP (or just one wildcard `*` record):
 
 osu!stable **requires https**, hence the wildcard cert step. with self-signed mode, every player must install the generated `cert.pem` as a Trusted Root cert (fine for you + the homies, not for a public server).
 
-## 🧯 faq
+## faq
 
 - **server won't start?** `tmux attach -t <name>` and read the error. usually DNS/cert stuff or MariaDB not running (`systemctl status mariadb redis-server nginx`).
 - **osu! says can't connect?** check DNS has propagated (`ping osu.yourdomain.com`), ports 80/443 open, and the cert is trusted by the client.
@@ -108,4 +108,5 @@ osu!stable **requires https**, hence the wildcard cert step. with self-signed mo
 
 ---
 
-built different 😎 gl on the farm
+built different 😎
+gl on the farm
