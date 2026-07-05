@@ -6,6 +6,16 @@ the running history of [Auraelia](https://justharsiz.online) (`-devserver justha
 
 ---
 
+## 2026-07-04 — PP builder guide 📖
+
+- new in-depth, documentation-style guide at **/admin/pp/guide** (linked
+  from the PP page): a sticky-sidebar walkthrough of how the builder
+  works and the math behind it — the mods bitmask and what "no mod"
+  really means, the ramp curve and exponent shaping, the aim/speed stream
+  detection, accuracy/miss/star formulas, hard vs soft caps (with worked
+  number tables), relax, and how per-play pp becomes weighted profile pp.
+  Includes a step-by-step "build a preset from scratch" tutorial + recipes.
+
 ## 2026-07-04 — PP builder v3: visual flow editor 🧩
 
 /admin/pp is now a full drag-and-drop, block-based pp programming tool:

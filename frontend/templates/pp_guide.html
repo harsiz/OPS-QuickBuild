@@ -1,0 +1,390 @@
+{% extends 'admin/base.html' %}
+{% block title %} PP Guide {% endblock %}
+
+{% block content %}
+<link rel="stylesheet" href="/static/css/ops-admin.css">
+<div class="container ops-admin" style="padding: 24px 12px; max-width: 1180px;">
+  <h1 class="title">📖 PP builder — the complete guide</h1>
+  <div class="tabs ops-tabs">
+    <ul>
+      <li><a href="/admin/">Dashboard</a></li>
+      <li><a href="/admin/users">Users</a></li>
+      <li><a href="/admin/maps">Maps</a></li>
+      <li class="is-active"><a href="/admin/pp">PP</a></li>
+      <li><a href="/admin/stats">Stats</a></li>
+    </ul>
+  </div>
+
+  <div class="ops-guide">
+    <nav class="ops-guide-nav" id="toc">
+      <div class="navgroup">Getting started</div>
+      <a href="#what">What this is</a>
+      <a href="#pp101">How osu! pp works</a>
+      <a href="#model">The execution model</a>
+      <div class="navgroup">Reference</div>
+      <a href="#blocks">Blocks</a>
+      <a href="#formulas">The formula language</a>
+      <a href="#vars">Variables</a>
+      <a href="#funcs">Functions</a>
+      <div class="navgroup">The math</div>
+      <a href="#nomod">No mod &amp; the mods bitmask</a>
+      <a href="#ramp">Base multiplier &amp; the ramp curve</a>
+      <a href="#skill">Streams vs aim</a>
+      <a href="#acc">Accuracy &amp; misses</a>
+      <a href="#stars">Star rating</a>
+      <a href="#caps">Caps &amp; softcaps</a>
+      <a href="#relax">Relax</a>
+      <a href="#weighting">From play pp to profile pp</a>
+      <div class="navgroup">Doing it yourself</div>
+      <a href="#custom">Build a preset from scratch</a>
+      <a href="#recipes">Recipes</a>
+      <a href="#apply">Compile, save &amp; apply</a>
+      <a href="#gotchas">Gotchas</a>
+    </nav>
+
+    <article class="ops-guide-body">
+
+      <h2 id="what">What this is</h2>
+      <p>The PP builder lets you redefine how your server awards performance points (pp) without
+      writing a line of code. You stack <b>blocks</b> into a <b>flow</b>; the flow takes the pp
+      osu! would normally give a play and transforms it into the pp <em>your</em> server gives.</p>
+      <p>Under the hood the builder turns your blocks into a Python function called
+      <code>modify_pp(pp, ctx)</code>. It runs in two places, always identically:</p>
+      <ul>
+        <li><b>Live</b> — every time a score is submitted in-game.</li>
+        <li><b>Recalc</b> — when you hit <b>Save and Update</b>, every existing score is
+        recomputed so old and new plays live under the same rules.</li>
+      </ul>
+      <div class="ops-callout">Nothing you do here can break the game server. If a flow ever errors
+      on a score, that score silently falls back to normal bancho pp — it "fails open".</div>
+
+      <h2 id="pp101">How osu! pp works (the 2-minute version)</h2>
+      <p>You can't tweak pp meaningfully without knowing what the number you're given represents.
+      When a play finishes, osu!'s calculator looks at the beatmap and your score and produces:</p>
+      <ul>
+        <li><b>Star rating</b> (<code>stars</code>) — the map's overall difficulty.</li>
+        <li><b>Skill components</b> — the raw pp is built from separate skills:
+          <code>pp_aim</code> (jumps/flow), <code>pp_speed</code> (streams/tapping),
+          <code>pp_acc</code> (precision), and <code>pp_flashlight</code>. These roughly add up
+          to the total.</li>
+        <li><b>The total</b> — combined and scaled by your accuracy, combo and misses. This total
+        is the <code>pp</code> value handed to your flow.</li>
+      </ul>
+      <p>So a 200pp jump map and a 200pp stream map arrive with the same <code>pp</code> but very
+      different <code>pp_aim</code>/<code>pp_speed</code> splits. That split is what lets you buff
+      streams and nerf aim — more on that <a href="#skill">below</a>.</p>
+
+      <h2 id="model">The execution model</h2>
+      <p>Your flow runs <b>top to bottom</b>, once per score. Two values matter:</p>
+      <table>
+        <tr><th>value</th><th>meaning</th></tr>
+        <tr><td><code>pp</code></td><td>the <em>original</em> bancho pp. Never changes — read it any time.</td></tr>
+        <tr><td><code>new_pp</code></td><td>the running result. Every block edits this. What's in it at the end is what the play is worth.</td></tr>
+      </table>
+      <p>When the flow starts, <code>new_pp</code> equals <code>pp</code>. A block like
+      <b>✖️ multiply pp</b> with formula <code>1.5</code> does <code>new_pp = new_pp × 1.5</code>.
+      Order matters: multiplying by 2 and then capping at 1000 is different from capping first.</p>
+      <p>At the very end the server guards the result (negative or invalid → 0) and hands it back.
+      You never write the <code>return</code> — the builder does.</p>
+
+      <h2 id="blocks">Blocks</h2>
+      <p>Each block is one statement in the flow. Drag the grip (<code>⠿</code>) to reorder;
+      the <code>✕</code> deletes.</p>
+      <table>
+        <tr><th>block</th><th>what it does</th><th>example</th></tr>
+        <tr><td>✖️ multiply pp</td><td><code>new_pp ×= formula</code></td><td><code>1.5 + 2 * pv</code></td></tr>
+        <tr><td>🟰 set pp</td><td><code>new_pp = formula</code> (replace outright)</td><td><code>min(pp, 1000)</code></td></tr>
+        <tr><td>➕ add to pp</td><td><code>new_pp += formula</code></td><td><code>50 * is_hd</code></td></tr>
+        <tr><td>❓ if / else</td><td>run child blocks only when the condition is true</td><td>when <code>acc &gt; 98</code></td></tr>
+        <tr><td>📦 set variable</td><td>store a value to reuse later</td><td><code>pv = ramp(pp, 500)</code></td></tr>
+        <tr><td>🧢 cap (max)</td><td>hard ceiling: <code>new_pp = min(new_pp, formula)</code></td><td><code>4000</code></td></tr>
+        <tr><td>⬆️ floor (min)</td><td>hard floor: <code>new_pp = max(new_pp, formula)</code></td><td><code>10</code></td></tr>
+        <tr><td>🪶 softcap</td><td>diminishing returns past a point (see <a href="#caps">caps</a>)</td><td>past <code>1200</code> exp <code>0.8</code></td></tr>
+        <tr><td>💬 comment</td><td>a note to yourself, ignored by the math</td><td>—</td></tr>
+      </table>
+      <p><b>if / else</b> blocks nest: their THEN and ELSE branches are their own mini-flows, so you
+      can put an <code>if</code> inside an <code>if</code> as deep as you like.</p>
+
+      <h2 id="formulas">The formula language</h2>
+      <p>Every white box is a <b>formula</b> — a little math expression. It supports:</p>
+      <ul>
+        <li>numbers: <code>1.5</code>, <code>0.35</code>, <code>4000</code></li>
+        <li>arithmetic: <code>+ - * / **</code> (<code>**</code> is "to the power of")</li>
+        <li>comparisons: <code>&gt; &lt; &gt;= &lt;= == !=</code></li>
+        <li>logic: <code>and</code>, <code>or</code>, <code>not</code></li>
+        <li>variables and functions (below)</li>
+        <li>parentheses to group: <code>(pp + 100) * 2</code></li>
+      </ul>
+      <p>In a condition (the <code>if</code> box) the formula is read as true/false. In a value box
+      it's read as a number. A comparison like <code>acc &gt; 98</code> is <code>1</code> when true
+      and <code>0</code> when false, so you can even use it inside arithmetic:
+      <code>1 + 0.2 * (acc &gt; 98)</code> adds 20% only on 98%+ plays.</p>
+      <div class="ops-callout warn">Division is safe: dividing by zero gives <code>0</code> instead of
+      crashing. Only whitelisted names work — a typo like <code>accc</code> is caught the moment you
+      press <b>Compile</b>, never at score time.</div>
+
+      <h3 id="vars">Variables</h3>
+      <p>Read-only values describing the current play:</p>
+      <table>
+        <tr><th>variable</th><th>meaning</th></tr>
+        <tr><td><code>pp</code> / <code>ranked_pp</code></td><td>original bancho pp for this play</td></tr>
+        <tr><td><code>new_pp</code></td><td>the running value your flow is building</td></tr>
+        <tr><td><code>acc</code></td><td>accuracy, 0–100</td></tr>
+        <tr><td><code>stars</code></td><td>map star rating</td></tr>
+        <tr><td><code>combo</code></td><td>max combo reached</td></tr>
+        <tr><td><code>nmiss</code> / <code>miss</code></td><td>number of misses</td></tr>
+        <tr><td><code>mods</code></td><td>the mod bitmask (see <a href="#nomod">below</a>)</td></tr>
+        <tr><td><code>mode</code></td><td>0 std · 1 taiko · 2 catch · 3 mania · 4–6 relax · 8 autopilot</td></tr>
+        <tr><td><code>pp_aim</code>, <code>pp_speed</code>, <code>pp_acc</code>, <code>pp_flashlight</code></td><td>the skill breakdown of the raw pp</td></tr>
+        <tr><td><code>speed_share</code></td><td><code>pp_speed / (pp_aim + pp_speed)</code> — 0 = pure aim, 1 = pure stream</td></tr>
+        <tr><td><code>aim_share</code></td><td><code>1 − speed_share</code></td></tr>
+        <tr><td><code>is_relax</code>, <code>is_dt</code>, <code>is_hd</code>, <code>is_hr</code>, <code>is_ez</code>, <code>is_fl</code></td><td>quick 1/0 mod flags</td></tr>
+      </table>
+      <p>Available in your install: {% for v in pp_vars %}<code>{{ v }}</code> {% endfor %}</p>
+
+      <h3 id="funcs">Functions</h3>
+      <table>
+        <tr><th>function</th><th>what it returns</th></tr>
+        <tr><td><code>ramp(x, full)</code></td><td>0 when <code>x</code>≤0, rising linearly to 1 at <code>x = full</code>, then stays 1. Great for "scale with play value".</td></tr>
+        <tr><td><code>clamp(x, lo, hi)</code></td><td><code>x</code> forced into the range <code>[lo, hi]</code></td></tr>
+        <tr><td><code>lerp(a, b, t)</code></td><td>blend from <code>a</code> to <code>b</code> as <code>t</code> goes 0→1</td></tr>
+        <tr><td><code>iif(cond, a, b)</code></td><td><code>a</code> if <code>cond</code> is true, else <code>b</code></td></tr>
+        <tr><td><code>min(…)</code>, <code>max(…)</code></td><td>smallest / largest of the arguments</td></tr>
+        <tr><td><code>abs</code>, <code>sqrt</code>, <code>floor</code>, <code>ceil</code></td><td>the usual math helpers</td></tr>
+        <tr><td><code>has_mod(bit)</code></td><td>1 if that mod is on, else 0</td></tr>
+      </table>
+
+      <h2 id="nomod">No mod &amp; the mods bitmask</h2>
+      <p>"Mods" is a single number where each mod is one <b>bit</b>. Adding mods adds their numbers:</p>
+      <table>
+        <tr><th>mod</th><th>bit</th><th>flag</th></tr>
+        <tr><td>NoFail</td><td>1</td><td><code>has_mod(1)</code></td></tr>
+        <tr><td>Easy</td><td>2</td><td><code>is_ez</code></td></tr>
+        <tr><td>Hidden</td><td>8</td><td><code>is_hd</code></td></tr>
+        <tr><td>HardRock</td><td>16</td><td><code>is_hr</code></td></tr>
+        <tr><td>DoubleTime/NC</td><td>64</td><td><code>is_dt</code></td></tr>
+        <tr><td>Flashlight</td><td>1024</td><td><code>is_fl</code></td></tr>
+        <tr><td>Relax</td><td>128</td><td><code>is_relax</code></td></tr>
+      </table>
+      <p>So a play with <b>HD + HR</b> has <code>mods = 8 + 16 = 24</code>. A <b>no mod</b> play has
+      <code>mods = 0</code> — no bits set at all. That's the key:</p>
+      <pre><code>no mod  →  mods == 0
+has DT  →  is_dt   (i.e. mods &amp; 64)
+DT + HD →  is_dt and is_hd</code></pre>
+      <p><b>The math of "no mod".</b> When <code>mods == 0</code>, every <code>is_*</code> flag is
+      <code>0</code>, so any <code>if is_dt</code>, <code>if is_hr</code>, etc. block is skipped
+      entirely. A no-mod play is therefore shaped only by your <em>unconditional</em> blocks — the
+      base multiplier, the stream/aim skew, accuracy and star rules. This is exactly why a "reward
+      no mod" idea works by <em>penalising the modded plays</em> rather than boosting nomod:</p>
+      <pre><code>✖️ multiply pp by 1.5              (everyone)
+❓ if mods == 0:
+   ✖️ multiply pp by 1.5           (nomod only → effectively 2.25×)
+   else:
+   ✖️ multiply pp by 0.8           (any mod → 1.2×)</code></pre>
+      <p>Because osu! already gives DT and HR plays more raw pp (they're harder), servers often use
+      the builder to <em>flatten</em> that — e.g. nerf <code>is_dt</code> — so nomod skill stays
+      competitive on the leaderboard.</p>
+
+      <h2 id="ramp">Base multiplier &amp; the ramp curve</h2>
+      <p>Most economies start with a base multiplier that grows with how good the play is. The
+      Auraelia default is:</p>
+      <pre><code>📦 pv  = ramp(pp, 500)          # 0 at 0pp, 1 at 500+ raw pp
+✖️ pp *= 1.5 + 2.0 * (pv ** 0.45)</code></pre>
+      <p>Read it piece by piece:</p>
+      <ul>
+        <li><code>ramp(pp, 500)</code> maps the raw pp onto a 0→1 "play value" <code>pv</code>. A
+        100pp play gives <code>pv = 0.2</code>; a 500pp+ play gives <code>pv = 1</code>.</li>
+        <li><code>1.5 + 2.0 * pv</code> would be a straight line from <b>1.5×</b> (weak plays) to
+        <b>3.5×</b> (elite plays).</li>
+        <li>The <code>** 0.45</code> bends that line. An exponent <b>below 1</b> is
+        <em>front-loaded</em>: the multiplier rises fast for weak/mid plays and crawls at the top.
+        Above 1 is <em>back-loaded</em> (top-heavy). Exactly 1 is a straight line.</li>
+      </ul>
+      <p>Worked numbers with exponent 0.45:</p>
+      <table>
+        <tr><th>raw pp</th><th>pv</th><th>pv<sup>0.45</sup></th><th>multiplier</th><th>result</th></tr>
+        <tr><td>100</td><td>0.20</td><td>0.48</td><td>2.46×</td><td>246</td></tr>
+        <tr><td>250</td><td>0.50</td><td>0.73</td><td>2.96×</td><td>740</td></tr>
+        <tr><td>500+</td><td>1.00</td><td>1.00</td><td>3.50×</td><td>1750+</td></tr>
+      </table>
+      <p>Notice a mid play (250) is already ~85% of the way to the max multiplier — that "fast then
+      flat" shape is the front-loading. Want the opposite (only the very best plays get rewarded)?
+      Raise the exponent to <code>2</code>. Want an even spread? Use <code>1</code>.</p>
+
+      <h2 id="skill">Streams vs aim (the aim/speed split)</h2>
+      <p>Every play arrives with <code>pp_aim</code> and <code>pp_speed</code>. From them we derive:</p>
+      <pre><code>speed_share = pp_speed / (pp_aim + pp_speed)</code></pre>
+      <p><code>speed_share</code> is <b>0</b> on a pure aim map, <b>1</b> on a pure stream map, and
+      around <b>0.35–0.45</b> on a balanced map. To buff streams and nerf aim, measure how far a map
+      leans from neutral (0.40) and scale the effect:</p>
+      <pre><code>❓ if speed_share &gt; 0.40:
+   ✖️ multiply pp by 1 + 0.50 * clamp((speed_share - 0.40) / 0.25, 0, 1)
+   else:
+   ✖️ multiply pp by 1 - 0.15 * clamp((0.40 - speed_share) / 0.25, 0, 1)</code></pre>
+      <p>The <code>clamp(…, 0, 1)</code> turns "distance from neutral" into a 0→1 strength that
+      maxes out 0.25 past neutral. So:</p>
+      <ul>
+        <li>a map at <code>speed_share = 0.65</code> is <code>(0.65−0.40)/0.25 = 1.0</code> →
+        the <b>full +50%</b> stream buff.</li>
+        <li>a map at <code>0.525</code> is halfway → <b>+25%</b>.</li>
+        <li>a heavy aim map at <code>0.15</code> → the <b>full −15%</b> nerf.</li>
+      </ul>
+      <p>Change <code>0.40</code> to move the neutral point, <code>0.25</code> to change how quickly
+      the effect ramps (smaller = more sensitive), and the <code>0.50</code>/<code>0.15</code> to
+      change the maximum buff/nerf.</p>
+
+      <h2 id="acc">Accuracy &amp; misses</h2>
+      <p><code>acc</code> is a 0–100 percentage. A clean way to reward high accuracy is a ramp over
+      the top slice of the range:</p>
+      <pre><code>✖️ multiply pp by 1 + 0.20 * clamp((acc - 95) / 5, 0, 1)</code></pre>
+      <p>This is <b>+0%</b> at 95% and below, scaling to <b>+20%</b> at 100%. The
+      <code>(acc − 95) / 5</code> maps 95→100 onto 0→1, and <code>clamp</code> stops it going
+      negative below 95 or above 20% past 100.</p>
+      <p>Misses are a raw count. A per-miss penalty with a floor so one bad play isn't zeroed:</p>
+      <pre><code>❓ if nmiss &gt; 0:
+   ✖️ multiply pp by max(1 - 0.03 * nmiss, 0.70)</code></pre>
+      <p>Each miss removes 3%, but <code>max(…, 0.70)</code> stops the penalty ever exceeding 30%.
+      A 5-miss play keeps <code>1 − 0.15 = 0.85</code>; a 20-miss play bottoms out at 0.70.</p>
+
+      <h2 id="stars">Star rating</h2>
+      <p><code>stars</code> lets you shape the economy by map difficulty directly. Two common tools:</p>
+      <pre><code>❓ if stars &gt; 6:
+   ✖️ multiply pp by 1 + min(0.10 * (stars - 6), 0.50)   # +10%/star over 6★, capped +50%
+❓ if stars &lt; 3:
+   ✖️ multiply pp by 0.40                                 # gut the 2★ farm</code></pre>
+      <p>The <code>min(…, 0.50)</code> caps the high-star bonus so a 12★ outlier doesn't explode.
+      The low-star nerf is the single most effective anti-farm lever: cheap 1–2★ "relax spinner"
+      maps stop being worth grinding.</p>
+
+      <h2 id="caps">Caps &amp; softcaps — the math</h2>
+      <p>A <b>hard cap</b> is a flat wall: <code>new_pp = min(new_pp, cap)</code>. Everything above
+      the cap becomes exactly the cap, so a 3800pp and a 6000pp play both read 4000. Simple, but it
+      flattens the very top of your leaderboard into a tie.</p>
+      <p>A <b>softcap</b> keeps some separation by applying diminishing returns past the cap:</p>
+      <pre><code>if new_pp &gt; cap:
+    new_pp = cap + (new_pp - cap) ** exp</code></pre>
+      <p>With <code>cap = 1200</code> and <code>exp = 0.8</code>, the "overflow" above 1200 is raised
+      to the 0.8 power — so it still grows, just slower:</p>
+      <table>
+        <tr><th>pre-cap pp</th><th>overflow</th><th>overflow<sup>0.8</sup></th><th>final</th></tr>
+        <tr><td>1200</td><td>0</td><td>0</td><td>1200</td></tr>
+        <tr><td>1400</td><td>200</td><td>69</td><td>1269</td></tr>
+        <tr><td>2000</td><td>800</td><td>210</td><td>1410</td></tr>
+        <tr><td>4000</td><td>2800</td><td>574</td><td>1774</td></tr>
+      </table>
+      <p>Lower <code>exp</code> = harsher squeeze (0.5 is very flat); closer to 1 = gentler. The best
+      plays still rank above good plays, just not by a runaway margin.</p>
+
+      <h2 id="relax">Relax</h2>
+      <p>Relax plays are flagged by <code>is_relax</code> (the RX mod, or a relax game mode). Because
+      relax removes the hardest skill (tapping accuracy), servers usually discount it so it can share
+      the main leaderboard fairly:</p>
+      <pre><code>❓ if is_relax:
+   ✖️ multiply pp by 0.35        # relax keeps 35% (a 65% reduction)</code></pre>
+      <p>Put this near the <em>end</em> of the flow so the discount applies to the finished value,
+      after your base and skill rules.</p>
+
+      <h2 id="weighting">From play pp to profile pp</h2>
+      <p>Your flow sets the pp of a <em>single play</em>. A player's <b>profile pp</b> is built from
+      their scores separately, and it's worth knowing so numbers don't surprise you:</p>
+      <ul>
+        <li>Each player's best play per map is taken and sorted highest-first.</li>
+        <li>Only the <b>top 100</b> count, and each is <b>weighted</b>: the #1 play counts fully,
+        #2 counts 95%, #3 counts 0.95² = 90.25%, and so on (<code>0.95^rank</code>).</li>
+        <li>Those weighted values are summed into profile pp.</li>
+      </ul>
+      <p>Two consequences: (1) total pp is much larger than any single play — a stack of good plays
+      adds up. (2) Because it's a <em>weighted top 100</em>, a multiplier that changes every play
+      also multiplies the total by roughly the same factor, but rank order can still shuffle because
+      different players' top-100s react differently to your rules. A full recalc always re-sorts
+      everyone from scratch.</p>
+
+      <h2 id="custom">Build a custom preset from scratch</h2>
+      <p>Let's design a "<b>precision</b>" economy: modest base, big accuracy reward, punish misses,
+      keep the top tidy. Build it block by block.</p>
+      <ol>
+        <li><b>Base.</b> Add <b>📦 set variable</b> <code>pv</code> = <code>ramp(pp, 600)</code>,
+        then <b>✖️ multiply pp</b> by <code>1.0 + 0.6 * pv</code>. That's a gentle 1.0→1.6× range —
+        precision servers keep multipliers low so skill, not inflation, decides ranks.</li>
+        <li><b>Accuracy reward.</b> Add <b>✖️ multiply pp</b> by
+        <code>1 + 0.35 * clamp((acc - 96) / 4, 0, 1)</code> — up to +35% for a 100% play.</li>
+        <li><b>Miss punishment.</b> Add <b>❓ if</b> <code>nmiss &gt; 0</code>, and inside it
+        <b>✖️ multiply pp</b> by <code>max(1 - 0.05 * nmiss, 0.5)</code>.</li>
+        <li><b>Anti-farm.</b> Add <b>❓ if</b> <code>stars &lt; 3</code> → <b>✖️</b> <code>0.5</code>.</li>
+        <li><b>Relax.</b> Add <b>❓ if</b> <code>is_relax</code> → <b>✖️</b> <code>0.3</code>.</li>
+        <li><b>Tidy top.</b> Add a <b>🪶 softcap</b> past <code>1200</code> exp <code>0.75</code>.</li>
+      </ol>
+      <p>Press <b>Compile</b> to see the generated Python and confirm it's valid, watch the readable
+      preview match your intent, then <b>Save and Update</b>. That's a complete, original ruleset in
+      six blocks.</p>
+      <div class="ops-callout">Tip: start from the closest preset (the search box up top) and adjust,
+      rather than from an empty flow. "Tryhard" is a great base for competitive tweaks.</div>
+
+      <h2 id="recipes">Recipes</h2>
+      <h3>Flat inflation</h3>
+      <pre><code>✖️ multiply pp by 2.0</code></pre>
+      <h3>Reward nomod, tax mods</h3>
+      <pre><code>❓ if mods == 0:
+   ✖️ multiply pp by 1.4
+   else:
+   ✖️ multiply pp by 0.85</code></pre>
+      <h3>DT specialist server</h3>
+      <pre><code>📦 pv = ramp(pp, 500)
+✖️ multiply pp by 2 + 2 * pv
+❓ if is_dt:
+   ✖️ multiply pp by 1 + 0.6 * pv
+🧢 cap at 5000</code></pre>
+      <h3>Blend two ideas with lerp</h3>
+      <pre><code>📦 pv = ramp(pp, 500)
+✖️ multiply pp by lerp(1.2, 3.0, pv)   # 1.2× on weak plays → 3× on elite</code></pre>
+
+      <h2 id="apply">Compile, save &amp; apply</h2>
+      <ul>
+        <li><b>🔧 Compile</b> — validates your flow and shows the exact Python it generates. Use it
+        freely; it changes nothing on the server. Errors (bad name, empty box) appear here in red.</li>
+        <li><b>💾 Save and Update</b> — writes the profile (backing up the previous one as
+        <code>.bak</code>), recalculates <b>every</b> score, rebuilds leaderboards, and restarts the
+        game server. Players are briefly disconnected by the restart and can rejoin immediately.</li>
+      </ul>
+      <p>Saving runs in the background — the last-update log on the PP page shows progress and a
+      "done" line when the new economy is live (a full recalc takes a few minutes).</p>
+
+      <h2 id="gotchas">Gotchas</h2>
+      <ul>
+        <li><b>Order is everything.</b> Caps, softcaps and the relax discount belong at the
+        <em>end</em>; the base multiplier at the start. A cap placed early gets undone by later
+        multiplies.</li>
+        <li><b>Variable names</b> must be lowercase letters/numbers/underscores and can't reuse a
+        built-in name (like <code>ramp</code> or <code>min</code>). Set a variable before you read it.</li>
+        <li><b>Percent vs multiplier.</b> "+20%" is <code>× 1.2</code>, not <code>× 0.2</code>. A
+        nerf of 30% is <code>× 0.7</code>.</li>
+        <li><b>Big multipliers + no cap</b> can send top plays into the tens of thousands. That's
+        fine if intended — just know a recalc will reshuffle the whole leaderboard.</li>
+        <li>When in doubt, <b>Compile</b> and read the generated Python. It never lies about what
+        your blocks actually do.</li>
+      </ul>
+
+      <p style="margin-top:36px; opacity:.6;">← back to the
+      <a href="/admin/pp" class="ops-guide-link" style="margin:0;">flow builder</a></p>
+    </article>
+  </div>
+</div>
+
+<script>
+// scrollspy: highlight the current section in the sidebar
+(function () {
+  const links = Array.from(document.querySelectorAll('#toc a'));
+  const map = {};
+  links.forEach(a => { const id = a.getAttribute('href').slice(1); map[id] = a; });
+  const obs = new IntersectionObserver((entries) => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        links.forEach(l => l.classList.remove('active'));
+        if (map[e.target.id]) map[e.target.id].classList.add('active');
+      }
+    });
+  }, { rootMargin: '-70px 0px -70% 0px' });
+  document.querySelectorAll('.ops-guide-body h2[id]').forEach(h => obs.observe(h));
+})();
+</script>
+{% endblock %}

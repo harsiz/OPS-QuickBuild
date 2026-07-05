@@ -105,3 +105,57 @@
 .user-block { border-radius: 8px; }
 .button { border-radius: 8px; }
 details > summary { cursor: pointer; }
+
+.ops-guide-link {
+  font-size: 13px; font-weight: 600; margin-left: 12px; vertical-align: middle;
+  padding: 4px 12px; border-radius: 20px;
+  background: hsla(var(--main,265),40%,50%,.22);
+  color: hsl(var(--main,265),60%,78%) !important;
+}
+.ops-guide-link:hover { background: hsla(var(--main,265),45%,55%,.38); }
+
+/* ── /admin/pp/guide documentation layout ── */
+.ops-guide { display: flex; gap: 28px; align-items: flex-start; }
+.ops-guide-nav {
+  position: sticky; top: 74px; flex: 0 0 230px; width: 230px;
+  max-height: calc(100vh - 96px); overflow-y: auto; font-size: 13px;
+  border-right: 1px solid hsla(var(--main,265),25%,50%,.18); padding-right: 10px;
+}
+.ops-guide-nav a { display: block; padding: 5px 10px; border-radius: 6px; opacity: .7; color: inherit; }
+.ops-guide-nav a:hover { opacity: 1; background: hsla(var(--main,265),35%,50%,.14); }
+.ops-guide-nav a.sub { padding-left: 22px; font-size: 12px; opacity: .55; }
+.ops-guide-nav a.active { opacity: 1; background: hsla(var(--main,265),40%,50%,.22); font-weight: 600; }
+.ops-guide-nav .navgroup { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; opacity: .4; margin: 14px 0 4px 10px; }
+
+.ops-guide-body { flex: 1; min-width: 0; max-width: 820px; line-height: 1.72; }
+.ops-guide-body h2 { font-size: 26px; font-weight: 800; margin: 46px 0 14px; scroll-margin-top: 80px;
+  padding-bottom: 6px; border-bottom: 1px solid hsla(var(--main,265),25%,50%,.2); }
+.ops-guide-body h2:first-child { margin-top: 8px; }
+.ops-guide-body h3 { font-size: 18px; font-weight: 700; margin: 28px 0 8px; scroll-margin-top: 80px; color: hsl(var(--main,265),55%,75%); }
+.ops-guide-body p, .ops-guide-body li { opacity: .92; }
+.ops-guide-body ul, .ops-guide-body ol { margin: 8px 0 8px 22px; }
+.ops-guide-body li { margin: 4px 0; }
+.ops-guide-body code {
+  background: hsla(var(--main,265),30%,40%,.28); color: hsl(var(--main,265),62%,82%);
+  padding: 1px 6px; border-radius: 5px; font-size: 13px;
+}
+.ops-guide-body pre {
+  background: rgba(0,0,0,.34); padding: 14px 16px; border-radius: 10px;
+  font-size: 12.5px; line-height: 1.55; overflow-x: auto; margin: 12px 0;
+  border-left: 3px solid hsl(var(--main,265),45%,55%);
+}
+.ops-guide-body pre code { background: none; color: #e8e6ef; padding: 0; }
+.ops-callout {
+  background: hsla(var(--main,265),30%,45%,.14); border-left: 3px solid hsl(var(--main,265),50%,58%);
+  padding: 12px 16px; border-radius: 8px; margin: 14px 0;
+}
+.ops-callout.warn { background: hsla(38,60%,45%,.14); border-left-color: #e0a83a; }
+.ops-guide-body table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13px; }
+.ops-guide-body table th, .ops-guide-body table td {
+  text-align: left; padding: 7px 10px; border-bottom: 1px solid hsla(var(--main,265),20%,50%,.16);
+}
+.ops-guide-body table th { opacity: .6; font-weight: 700; }
+@media screen and (max-width: 900px) {
+  .ops-guide { flex-direction: column; }
+  .ops-guide-nav { position: static; width: 100%; flex-basis: auto; max-height: none; border-right: 0; }
+}

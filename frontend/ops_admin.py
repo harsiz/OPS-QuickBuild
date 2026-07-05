@@ -888,6 +888,16 @@ async def pp_builder():
         msg=request.args.get('msg'), st=request.args.get('st', 'success'))
 
 
+@ops_admin.route('/pp/guide')
+async def pp_guide():
+    fail = _guard()
+    if fail:
+        return await flash('error', 'You have insufficient privileges.', fail)
+    return await render_template(
+        'admin/pp_guide.html',
+        pp_vars=sorted(PP_VARS), pp_funcs=sorted(PP_FUNCS))
+
+
 @ops_admin.route('/pp/compile', methods=['POST'])
 async def pp_compile():
     fail = _guard()
