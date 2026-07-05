@@ -55,8 +55,20 @@ def extract_pp(result: object) -> float | None:
     return None
 
 
+_DIFF_FIELD_MAP = {
+    "stars": "stars", "aim": "diff_aim", "speed": "diff_speed",
+    "flashlight": "diff_flashlight", "slider_factor": "slider_factor",
+    "speed_note_count": "speed_note_count", "stamina": "stamina",
+    "color": "color", "rhythm": "rhythm", "peak": "peak",
+}
+
+
 def extract_components(result: object) -> dict:
-    """Pull the pp component breakdown + star rating out of a result."""
+    """Pull the pp component + difficulty breakdown out of a result.
+
+    Mirrors ops_custom_pp.py's live plumbing field-for-field so a preset
+    behaves identically whether it's a live submission or a recalc.
+    """
     if isinstance(result, dict):
         perf = result.get("performance", result)
         diff = result.get("difficulty")
@@ -68,9 +80,10 @@ def extract_components(result: object) -> dict:
         val = perf.get(key) if isinstance(perf, dict) else getattr(perf, key, None)
         if isinstance(val, (int, float)):
             comps[key] = float(val)
-    stars = diff.get("stars") if isinstance(diff, dict) else getattr(diff, "stars", None)
-    if isinstance(stars, (int, float)):
-        comps["stars"] = float(stars)
+    for src_key, ctx_key in _DIFF_FIELD_MAP.items():
+        val = diff.get(src_key) if isinstance(diff, dict) else getattr(diff, src_key, None)
+        if isinstance(val, (int, float)):
+            comps[ctx_key] = float(val)
     return comps
 
 
@@ -206,6 +219,12 @@ def main() -> int:
             done += len(scores)
             continue
 
+        # same helper the live hook uses, so "length" matches exactly
+        try:
+            map_length = ops_custom_pp._map_length_seconds(str(osu_path))
+        except Exception:
+            map_length = None
+
         for (sid, mode, mods, acc, userid, s_nmiss), result in zip(meta, results):
             pp = extract_pp(result)
             if pp is None:
@@ -216,9 +235,11 @@ def main() -> int:
                 ctx = {
                     "source": "recalc", "score_id": sid, "user_id": userid,
                     "mode": mode, "mods": mods, "acc": acc, "map_id": map_id,
-                    "nmiss": s_nmiss,
+                    "nmiss": s_nmiss, "length": map_length,
                 }
                 ctx.update(extract_components(result))
+                if map_length and ctx.get("speed_note_count") is not None:
+                    ctx["note_density"] = ctx["speed_note_count"] / map_length
                 pp = float(modify_pp(pp, ctx))
             except Exception:
                 pass  # a broken profile shouldn't nuke the recalc

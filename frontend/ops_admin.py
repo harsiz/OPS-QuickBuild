@@ -309,7 +309,12 @@ PP_VARS = {
     'pp', 'new_pp', 'ranked_pp', 'acc', 'stars', 'combo', 'nmiss', 'miss',
     'mods', 'mode', 'pp_aim', 'pp_speed', 'pp_acc', 'pp_flashlight',
     'speed_share', 'aim_share', 'is_relax', 'is_dt', 'is_hd', 'is_hr',
-    'is_ez', 'is_fl',
+    'is_ez', 'is_fl', 'is_nf', 'is_so', 'is_sd', 'is_pf', 'is_ht', 'is_ap',
+    # difficulty-component breakdown (from the calculator's DifficultyRating)
+    'diff_aim', 'diff_speed', 'diff_flashlight', 'slider_factor',
+    'speed_note_count', 'stamina', 'rhythm', 'color', 'peak',
+    # map/song info
+    'length', 'note_density',
 }
 # functions a formula can call: name -> arity (-1 = variadic, >=1)
 PP_FUNCS = {
@@ -319,18 +324,28 @@ PP_FUNCS = {
 _USERVAR_RE = re.compile(r'^[a-z_][a-z0-9_]{0,24}$')
 _RESERVED = {'and', 'or', 'not', 'iif', 'true', 'false', 'none'} | set(PP_FUNCS)
 
-# the default flow shown to new/hand-written installs (== the auraelia v3 system)
+# the default flow shown to new/hand-written installs (== the auraelia v4 system)
 DEFAULT_FLOW = [
     {'t': 'setvar', 'name': 'pv', 'x': 'ramp(pp, 500)'},
-    {'t': 'comment', 'text': 'base multiplier 1.5x -> 3.5x, front-loaded'},
-    {'t': 'mul', 'x': '1.5 + 2.0 * (pv ** 0.45)'},
-    {'t': 'comment', 'text': 'stream buff / aim nerf from the aim-speed split'},
+    {'t': 'comment', 'text': 'base multiplier - modest, since skill/song bonuses stack on top'},
+    {'t': 'mul', 'x': '1.3 + 1.7 * (pv ** 0.5)'},
+    {'t': 'comment', 'text': 'stream/burst buff from the aim-speed pp split'},
     {'t': 'if', 'cond': 'speed_share > 0.40',
-     'then': [{'t': 'mul', 'x': '1 + 0.5 * clamp((speed_share - 0.40) / 0.25, 0, 1)'}],
-     'else': [{'t': 'mul', 'x': '1 - 0.15 * clamp((0.40 - speed_share) / 0.25, 0, 1)'}]},
-    {'t': 'if', 'cond': 'is_ez', 'then': [{'t': 'mul', 'x': '1 + 0.45 * pv'}], 'else': []},
-    {'t': 'if', 'cond': 'is_relax', 'then': [{'t': 'mul', 'x': '0.35'}], 'else': []},
-    {'t': 'clampmax', 'x': '4000'},
+     'then': [{'t': 'mul', 'x': '1 + 0.6 * clamp((speed_share - 0.40) / 0.25, 0, 1)'}], 'else': []},
+    {'t': 'comment', 'text': 'big jump maps - proxied by the aim difficulty component'},
+    {'t': 'if', 'cond': 'diff_aim > 5',
+     'then': [{'t': 'mul', 'x': '1 + min(0.05 * (diff_aim - 5), 0.4)'}], 'else': []},
+    {'t': 'comment', 'text': 'fast clicking - notes/sec density (speed_note_count / song length)'},
+    {'t': 'if', 'cond': 'note_density > 3',
+     'then': [{'t': 'mul', 'x': '1 + min(0.06 * (note_density - 3), 0.35)'}], 'else': []},
+    {'t': 'comment', 'text': 'anti-farm - gut low-star maps and sub-1-minute loops'},
+    {'t': 'if', 'cond': 'stars < 3', 'then': [{'t': 'mul', 'x': '0.5'}], 'else': []},
+    {'t': 'if', 'cond': 'length > 0 and length < 60', 'then': [{'t': 'mul', 'x': '0.65'}], 'else': []},
+    {'t': 'comment', 'text': 'song duration bonus - marathon maps pay out more'},
+    {'t': 'mul', 'x': '1 + 0.3 * clamp((length - 120) / 300, 0, 1)'},
+    {'t': 'comment', 'text': 'relax nerfed A LOT'},
+    {'t': 'if', 'cond': 'is_relax', 'then': [{'t': 'mul', 'x': '0.15'}], 'else': []},
+    {'t': 'softcap', 'cap': '4000', 'exp': '0.75'},
 ]
 
 # the fail-open hook machinery appended to every generated profile
@@ -340,11 +355,57 @@ PP_PLUMBING = '''
 # plumbing below — called by the live hook inside bancho.py; fails open.
 # ─────────────────────────────────────────────────────────────────────────────
 
+_LENGTH_CACHE: dict = {}
+
+
+def _extract_osu_path(args, kwargs):
+    try:
+        if kwargs and isinstance(kwargs.get("osu_file_path"), str):
+            return kwargs["osu_file_path"]
+        for a in (args or []):
+            if isinstance(a, str) and a:
+                return a
+    except Exception:
+        pass
+    return None
+
+
+def _map_length_seconds(osu_path):
+    """Approximate song length (seconds) from a .osu file's last hit object.
+
+    Cached per path — cheap and stable across the many scores set on the
+    same beatmap. Off by a few seconds on maps ending in a long slider or
+    spinner, which is fine for a "song duration" bonus.
+    """
+    if not osu_path:
+        return None
+    if osu_path in _LENGTH_CACHE:
+        return _LENGTH_CACHE[osu_path]
+    length = None
+    try:
+        with open(osu_path, "r", encoding="utf-8", errors="ignore") as f:
+            text = f.read()
+        idx = text.find("[HitObjects]")
+        if idx != -1:
+            lines = [ln.strip() for ln in text[idx:].splitlines()[1:] if ln.strip()]
+            if lines:
+                parts = lines[-1].split(",")
+                if len(parts) >= 3:
+                    length = float(parts[2]) / 1000.0
+    except Exception:
+        length = None
+    if len(_LENGTH_CACHE) > 5000:
+        _LENGTH_CACHE.clear()
+    _LENGTH_CACHE[osu_path] = length
+    return length
+
+
 def apply_to_results(results, args=None, kwargs=None):
     try:
         score_params = _extract_score_params(args, kwargs)
+        length = _map_length_seconds(_extract_osu_path(args, kwargs))
         for i, result in enumerate(results or []):
-            ctx = {"source": "live"}
+            ctx = {"source": "live", "length": length}
             if score_params is not None and i < len(score_params):
                 sp = score_params[i]
                 ctx["mode"] = getattr(sp, "mode", None)
@@ -417,9 +478,22 @@ def _apply_one(result, ctx):
         if isinstance(val, (int, float)):
             ctx[key] = float(val)
 
-    stars = diff.get("stars") if isinstance(diff, dict) else getattr(diff, "stars", None)
-    if isinstance(stars, (int, float)):
-        ctx["stars"] = float(stars)
+    # DifficultyRating breakdown — same object that gives us "stars"
+    diff_map = {
+        "stars": "stars", "aim": "diff_aim", "speed": "diff_speed",
+        "flashlight": "diff_flashlight", "slider_factor": "slider_factor",
+        "speed_note_count": "speed_note_count", "stamina": "stamina",
+        "color": "color", "rhythm": "rhythm", "peak": "peak",
+    }
+    for src_key, ctx_key in diff_map.items():
+        val = diff.get(src_key) if isinstance(diff, dict) else getattr(diff, src_key, None)
+        if isinstance(val, (int, float)):
+            ctx[ctx_key] = float(val)
+
+    length = ctx.get("length")
+    snc = ctx.get("speed_note_count")
+    if isinstance(length, (int, float)) and length > 0 and isinstance(snc, (int, float)):
+        ctx["note_density"] = snc / length
 
     if isinstance(perf, dict) and isinstance(perf.get("pp"), (int, float)):
         try:
@@ -721,6 +795,23 @@ def _generate_profile_from_flow(flow, flags: dict) -> str:
         '    is_hr = 1 if (mods & 16) else 0',
         '    is_ez = 1 if (mods & 2) else 0',
         '    is_fl = 1 if (mods & 1024) else 0',
+        '    is_nf = 1 if (mods & 1) else 0',
+        '    is_so = 1 if (mods & 4096) else 0',
+        '    is_sd = 1 if (mods & 32) else 0',
+        '    is_pf = 1 if (mods & 16384) else 0',
+        '    is_ht = 1 if (mods & 256) else 0',
+        '    is_ap = 1 if (mods & 8192) else 0',
+        '    diff_aim = _num(ctx.get("diff_aim"), 0.0)',
+        '    diff_speed = _num(ctx.get("diff_speed"), 0.0)',
+        '    diff_flashlight = _num(ctx.get("diff_flashlight"), 0.0)',
+        '    slider_factor = _num(ctx.get("slider_factor"), 1.0)',
+        '    speed_note_count = _num(ctx.get("speed_note_count"), 0.0)',
+        '    stamina = _num(ctx.get("stamina"), 0.0)',
+        '    rhythm = _num(ctx.get("rhythm"), 0.0)',
+        '    color = _num(ctx.get("color"), 0.0)',
+        '    peak = _num(ctx.get("peak"), 0.0)',
+        '    length = _num(ctx.get("length"), 0.0)',
+        '    note_density = _num(ctx.get("note_density"), _sd(speed_note_count, max(length, 30.0)))',
     ]
     tail = [
         '    if new_pp != new_pp or new_pp < 0:  # NaN or negative guard',

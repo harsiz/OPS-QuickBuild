@@ -94,11 +94,19 @@
 }
 .ops-py { max-height: 360px; overflow-y: auto; }
 
-.ops-import-ta {
-  margin-top: 10px; font-family: ui-monospace, monospace; font-size: 12px;
-  background: rgba(0,0,0,.28); border-color: hsla(var(--main,265),30%,50%,.3); color: inherit;
+.ops-edit-head {
+  font-size: 12px; font-weight: 700; opacity: .65; margin-bottom: 4px;
+  text-transform: uppercase; letter-spacing: .05em;
 }
-.ops-import-btn { position: relative; overflow: hidden; }
+.ops-textedit {
+  font-family: ui-monospace, monospace; font-size: 12px; line-height: 1.55;
+  background: rgba(0,0,0,.28); border-color: hsla(var(--main,265),30%,50%,.3);
+  color: inherit; min-height: 320px;
+}
+.ops-status { font-size: 12px; margin-top: 4px; min-height: 16px; }
+.ops-status.ok { color: #4ad991; }
+.ops-status.err { color: #ff6b6b; }
+.ops-showmore { border-radius: 20px !important; opacity: .8; }
 
 /* ── admin-wide polish (this stylesheet only loads on /admin pages) ── */
 .box { border-radius: 12px; }

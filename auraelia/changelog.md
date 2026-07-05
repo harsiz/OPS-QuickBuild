@@ -6,6 +6,49 @@ the running history of [Auraelia](https://justharsiz.online) (`-devserver justha
 
 ---
 
+## 2026-07-05 — PP v4, 18 new presets, live text sync 🥁🧩
+
+**PP system v4 — "the fast & the farmless"** (now the default flow for
+fresh/reset installs). Full recalc.
+
+- **stream/burst maps buffed** (same aim-speed skew as v3)
+- **big jump maps buffed** — proxied by the calculator's aim-difficulty
+  component (the closest available signal to "jump distance")
+- **fast clicking buffed** — a new `note_density` metric (notes/sec,
+  normalized by song length) rewards sustained tapping/streams regardless
+  of map length
+- **song duration bonus** — longer songs pay out more, up to +30% past
+  ~7 minutes (new `length` variable, read from the beatmap file)
+- **anti-farm, hard** — low-star maps and sub-1-minute loops both nerfed
+- **relax nerfed A LOT** — keeps just 15% of its vanilla-equivalent value
+  (down from v3's 35%)
+- softcap at 4000 instead of a hard wall
+
+**Every alterable pp variable is now exposed** to the flow builder: the
+full difficulty breakdown (`diff_aim`, `diff_speed`, `diff_flashlight`,
+`slider_factor`, `stamina`, `rhythm`, `color`, `peak`), song `length`,
+`note_density`, and mod flags for NF/SpunOut/SuddenDeath/Perfect/HalfTime/
+Autopilot. Live plays and recalcs read all of it identically (length is
+parsed from the same .osu file both times, so nothing drifts between the
+two).
+
+**18 new presets** (31 total): Auraelia v4, Aim God, Precision Only,
+Marathon Mode, Speed Demon, Ice Cold Farm Kill, Rainbow Balance, HR Titan,
+Hidden Grind, Half Time Chill, No Cap Chaos, Star Scaling, Flashlight
+Focus, Autopilot Amnesty, Double Trouble, Endurance Trial, Rhythm Reader,
+and The Whole Shebang (a long, in-depth demo touching nearly every
+variable). Presets now carry **tags** — the search box matches name or
+tag ("stream", "double time", "farm", "relax", "competitive", …). Only
+the first 10 show by default, with a "show all 31" button.
+
+**Live text sync replaces the import/export box.** Two new panels below
+the blocks — **Flow (JSON)** and **Readable flow** — stay perfectly in
+sync with the visual blocks and each other, in real time, in either
+direction: edit a block, type JSON, or type the same plain-English bullet
+format the readable view shows, and all three update instantly. Copying
+the JSON box out (or pasting one in) *is* the import/export now — no
+separate dialog.
+
 ## 2026-07-04 — PP import / export 📦
 
 - the PP builder can now **export** the current flow to a small

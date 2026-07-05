@@ -37,23 +37,9 @@
   <!-- presets -->
   <div class="box">
     <h2 class="subtitle">✨ presets <span class="ops-hint">click to load into the editor — nothing saves until you hit Save and Update</span></h2>
-    <input class="input ops-preset-search" id="preset-search" type="text" placeholder="🔎 search presets (e.g. stream, farm, relax, competitive)…">
+    <input class="input ops-preset-search" id="preset-search" type="text"
+      placeholder="🔎 search by name or tag (e.g. stream, double time, farm, relax, competitive)…">
     <div id="preset-list" class="ops-preset-list"></div>
-  </div>
-
-  <!-- import / export -->
-  <div class="box">
-    <h2 class="subtitle">📦 import / export <span class="ops-hint">save a pp system to a file, or load one someone shared</span></h2>
-    <div class="ops-btnrow" style="flex-wrap: wrap; align-items: center; gap: 8px;">
-      <button type="button" class="button is-small" id="btn-export">⬇️ Export current flow</button>
-      <label class="button is-small ops-import-btn">⬆️ Import from file
-        <input type="file" id="import-file" accept=".json,.opspp,application/json" hidden></label>
-      <span class="ops-hint">…or paste exported markup below</span>
-    </div>
-    <textarea class="textarea ops-import-ta" id="import-text" rows="3"
-      placeholder='paste exported pp markup here (JSON), then click Load'></textarea>
-    <button type="button" class="button is-small" id="btn-import-text" style="margin-top: 6px;">Load pasted markup</button>
-    <div id="import-msg"></div>
   </div>
 
   <div class="columns">
@@ -65,12 +51,8 @@
       </div>
     </div>
 
-    <!-- side panel: preview + cheatsheet -->
+    <!-- side panel: actions + cheatsheet -->
     <div class="column is-5">
-      <div class="box">
-        <h2 class="subtitle">📖 readable flow</h2>
-        <div id="md-preview" class="ops-md"></div>
-      </div>
       <div class="box">
         <div class="ops-btnrow">
           <button type="button" class="button is-info" id="btn-compile">🔧 Compile</button>
@@ -88,7 +70,26 @@
         <p class="ops-hint" style="margin-top:10px;">operators: <code>+ - * / **</code>,
         comparisons <code>&gt; &lt; &gt;= &lt;= == !=</code>, <code>and or not</code>.
         <code>ramp(x, full)</code>=0→1 ramp, <code>clamp(x, lo, hi)</code>,
-        <code>lerp(a, b, t)</code>, <code>iif(cond, a, b)</code>, <code>has_mod(bit)</code>.</p>
+        <code>lerp(a, b, t)</code>, <code>iif(cond, a, b)</code>, <code>has_mod(bit)</code>.
+        full breakdown in the <a href="/admin/pp/guide">guide</a>.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- text editors: type into either, both sync in real time — also your import/export -->
+  <div class="box">
+    <h2 class="subtitle">📝 edit as text <span class="ops-hint">type in either box — both stay synced with the blocks above, live.
+    this doubles as import/export: paste a flow to load it, copy one out to share it.</span></h2>
+    <div class="columns">
+      <div class="column is-6">
+        <div class="ops-edit-head">Flow (JSON)</div>
+        <textarea class="textarea ops-textedit" id="flow-text" rows="16" spellcheck="false"></textarea>
+        <div class="ops-status" id="flow-text-status"></div>
+      </div>
+      <div class="column is-6">
+        <div class="ops-edit-head">Readable flow</div>
+        <textarea class="textarea ops-textedit" id="md-text" rows="16" spellcheck="false"></textarea>
+        <div class="ops-status" id="md-text-status"></div>
       </div>
     </div>
   </div>
@@ -102,6 +103,7 @@
 <script>
 // ── model ──────────────────────────────────────────────────────────────────
 let flow = JSON.parse(document.getElementById('flow-data').textContent || '[]');
+const EMPTY_MD_PLACEHOLDER = '_(empty flow — pp passes through unchanged)_';
 
 const BLOCK_TYPES = [
   ['mul', '✖️ multiply pp'], ['set', '🟰 set pp'], ['add', '➕ add to pp'],
@@ -212,7 +214,7 @@ function renderBlock(arr, block, idx) {
 
 function renderFlow() { renderList(flow, document.getElementById('flow-canvas')); refreshMeta(); }
 
-// ── markdown mirror (matches server) ───────────────────────────────────────
+// ── markdown mirror (matches server's _flow_to_markdown, field-for-field) ──
 function flowMd(stmts, depth) {
   let out = []; const ind = '  '.repeat(depth);
   (stmts || []).forEach(st => {
@@ -232,11 +234,104 @@ function flowMd(stmts, depth) {
   });
   return out;
 }
+
+// ── markdown -> flow (exact inverse of flowMd, for the editable readable-flow box) ──
+function mdToFlow(text) {
+  const lines = text.split('\n').map(l => l.replace(/\r$/, '')).filter(l => l.trim().length > 0);
+  let i = 0;
+  const depthOf = (line) => { let n = 0; while (line[n] === ' ') n++; return Math.floor(n / 2); };
+  function parseLevel(depth) {
+    const out = [];
+    while (i < lines.length) {
+      const line = lines[i];
+      const d = depthOf(line);
+      if (d < depth) break;
+      if (d > depth) throw new Error('unexpected indent near: ' + line.trim());
+      const t = line.trim();
+      let m;
+      if ((m = t.match(/^- 💬 \*(.*)\*$/))) { out.push({ t: 'comment', text: m[1] }); i++; continue; }
+      if ((m = t.match(/^- ✖️ multiply pp by `(.*)`$/))) { out.push({ t: 'mul', x: m[1] }); i++; continue; }
+      if ((m = t.match(/^- ➕ add `(.*)` to pp$/))) { out.push({ t: 'add', x: m[1] }); i++; continue; }
+      if ((m = t.match(/^- 🟰 set pp = `(.*)`$/))) { out.push({ t: 'set', x: m[1] }); i++; continue; }
+      if ((m = t.match(/^- 📦 let `(.*)` = `(.*)`$/))) { out.push({ t: 'setvar', name: m[1], x: m[2] }); i++; continue; }
+      if ((m = t.match(/^- 🧢 cap pp at `(.*)`$/))) { out.push({ t: 'clampmax', x: m[1] }); i++; continue; }
+      if ((m = t.match(/^- ⬆️ floor pp at `(.*)`$/))) { out.push({ t: 'clampmin', x: m[1] }); i++; continue; }
+      if ((m = t.match(/^- 🪶 softcap past `(.*)` \(exp `(.*)`\)$/))) { out.push({ t: 'softcap', cap: m[1], exp: m[2] }); i++; continue; }
+      if ((m = t.match(/^- ❓ if `(.*)`:$/))) {
+        i++;
+        const thenBlocks = parseLevel(depth + 1);
+        let elseBlocks = [];
+        if (i < lines.length && depthOf(lines[i]) === depth && lines[i].trim() === '- ↪️ else:') {
+          i++;
+          elseBlocks = parseLevel(depth + 1);
+        }
+        out.push({ t: 'if', cond: m[1], then: thenBlocks, else: elseBlocks });
+        continue;
+      }
+      throw new Error('unrecognized line: ' + t.slice(0, 60));
+    }
+    return out;
+  }
+  const result = parseLevel(0);
+  if (i < lines.length) throw new Error('trailing content near: ' + lines[i].trim().slice(0, 60));
+  return result;
+}
+
 function refreshMeta() {
   const md = flowMd(flow, 0);
-  document.getElementById('md-preview').textContent = md.length ? md.join('\n') : '(empty — pp unchanged)';
+  const mdStr = md.length ? md.join('\n') : EMPTY_MD_PLACEHOLDER;
+  const jsonStr = JSON.stringify(flow, null, 2);
+  const flowTextEl = document.getElementById('flow-text');
+  const mdTextEl = document.getElementById('md-text');
+  if (document.activeElement !== flowTextEl) flowTextEl.value = jsonStr;
+  if (document.activeElement !== mdTextEl) mdTextEl.value = mdStr;
   document.getElementById('flow-json-input').value = JSON.stringify(flow);
 }
+
+function setStatus(id, text, cls) {
+  const e = document.getElementById(id);
+  e.textContent = text; e.className = 'ops-status ' + (cls || '');
+}
+
+function validFlow(stmts, depth) {
+  if (depth > 12 || !Array.isArray(stmts) || stmts.length > 200) return false;
+  return stmts.every(b => {
+    if (!b || typeof b !== 'object' || typeof b.t !== 'string') return false;
+    if (b.t === 'if') return validFlow(b.then || [], depth + 1) && validFlow(b.else || [], depth + 1);
+    return true;
+  });
+}
+
+function debounce(fn, ms) { let h; return (...a) => { clearTimeout(h); h = setTimeout(() => fn(...a), ms); }; }
+
+document.getElementById('flow-text').addEventListener('input', debounce(() => {
+  const text = document.getElementById('flow-text').value;
+  try {
+    const data = JSON.parse(text);
+    const f = Array.isArray(data) ? data : (data && data.flow);
+    if (!Array.isArray(f)) throw new Error('no flow array found (expected [...] or {"flow":[...]})');
+    if (!validFlow(f, 0)) throw new Error('malformed or too-deeply-nested blocks');
+    flow = f;
+    renderFlow();
+    setStatus('flow-text-status', '✅ synced', 'ok');
+  } catch (e) {
+    setStatus('flow-text-status', '❌ ' + e.message, 'err');
+  }
+}, 250));
+
+document.getElementById('md-text').addEventListener('input', debounce(() => {
+  const text = document.getElementById('md-text').value;
+  try {
+    const trimmed = text.trim();
+    const f = (trimmed === '' || trimmed === EMPTY_MD_PLACEHOLDER) ? [] : mdToFlow(text);
+    if (!validFlow(f, 0)) throw new Error('malformed structure');
+    flow = f;
+    renderFlow();
+    setStatus('md-text-status', '✅ synced', 'ok');
+  } catch (e) {
+    setStatus('md-text-status', '❌ ' + e.message, 'err');
+  }
+}, 250));
 
 // ── compile (server roundtrip) ─────────────────────────────────────────────
 document.getElementById('btn-compile').onclick = async () => {
@@ -267,7 +362,27 @@ document.getElementById('btn-save').onclick = () => {
 // ── presets ────────────────────────────────────────────────────────────────
 const PRESETS = [
   { name: '🏛️ Bancho Classic', tags: 'vanilla official default reset 1x', flow: [] },
-  { name: '🥁 Auraelia v3', tags: 'stream aim relax ez current default', flow: [
+
+  { name: '🥁 Auraelia v4', tags: 'stream jump aim clicking speed anti-farm farm relax marathon length flagship current default', flow: [
+    { t: 'setvar', name: 'pv', x: 'ramp(pp, 500)' },
+    { t: 'comment', text: 'base multiplier - modest, since skill/song bonuses stack on top' },
+    { t: 'mul', x: '1.3 + 1.7 * (pv ** 0.5)' },
+    { t: 'comment', text: 'stream/burst buff from the aim-speed pp split' },
+    { t: 'if', cond: 'speed_share > 0.40', then: [{ t: 'mul', x: '1 + 0.6 * clamp((speed_share - 0.40) / 0.25, 0, 1)' }], else: [] },
+    { t: 'comment', text: 'big jump maps - proxied by the aim difficulty component' },
+    { t: 'if', cond: 'diff_aim > 5', then: [{ t: 'mul', x: '1 + min(0.05 * (diff_aim - 5), 0.4)' }], else: [] },
+    { t: 'comment', text: 'fast clicking - notes/sec density (speed_note_count / song length)' },
+    { t: 'if', cond: 'note_density > 3', then: [{ t: 'mul', x: '1 + min(0.06 * (note_density - 3), 0.35)' }], else: [] },
+    { t: 'comment', text: 'anti-farm - gut low-star maps and sub-1-minute loops' },
+    { t: 'if', cond: 'stars < 3', then: [{ t: 'mul', x: '0.5' }], else: [] },
+    { t: 'if', cond: 'length > 0 and length < 60', then: [{ t: 'mul', x: '0.65' }], else: [] },
+    { t: 'comment', text: 'song duration bonus - marathon maps pay out more' },
+    { t: 'mul', x: '1 + 0.3 * clamp((length - 120) / 300, 0, 1)' },
+    { t: 'comment', text: 'relax nerfed A LOT' },
+    { t: 'if', cond: 'is_relax', then: [{ t: 'mul', x: '0.15' }], else: [] },
+    { t: 'softcap', cap: '4000', exp: '0.75' }] },
+
+  { name: '🥁 Auraelia v3', tags: 'stream aim relax ez legacy previous', flow: [
     { t: 'setvar', name: 'pv', x: 'ramp(pp, 500)' },
     { t: 'comment', text: 'base multiplier 1.5x -> 3.5x, front-loaded' },
     { t: 'mul', x: '1.5 + 2.0 * (pv ** 0.45)' },
@@ -278,17 +393,20 @@ const PRESETS = [
     { t: 'if', cond: 'is_ez', then: [{ t: 'mul', x: '1 + 0.45 * pv' }], else: [] },
     { t: 'if', cond: 'is_relax', then: [{ t: 'mul', x: '0.35' }], else: [] },
     { t: 'clampmax', x: '4000' }] },
-  { name: '⏩ DT Priority (v2)', tags: 'doubletime nightcore speed', flow: [
+
+  { name: '⏩ DT Priority (v2)', tags: 'doubletime double time nightcore dt speed', flow: [
     { t: 'setvar', name: 'pv', x: 'ramp(pp, 500)' },
     { t: 'mul', x: '3.5 + 1.5 * pv' },
     { t: 'if', cond: 'is_dt', then: [{ t: 'mul', x: '1 + 0.75 * pv' }], else: [] },
     { t: 'if', cond: 'is_relax', then: [{ t: 'mul', x: '0.75' }], else: [] },
     { t: 'clampmax', x: '4000' }] },
-  { name: '🌾 Farm Heaven', tags: 'inflation easy high pp casual fun', flow: [
+
+  { name: '🌾 Farm Heaven', tags: 'inflation easy high pp casual fun farm', flow: [
     { t: 'setvar', name: 'pv', x: 'ramp(pp, 400)' },
     { t: 'mul', x: '4 + 4 * pv' },
     { t: 'if', cond: 'is_dt', then: [{ t: 'mul', x: '1.3' }], else: [] },
     { t: 'if', cond: 'is_relax', then: [{ t: 'mul', x: '0.5' }], else: [] }] },
+
   { name: '🥁 Stream Dream', tags: 'stream burst speed nerf aim', flow: [
     { t: 'setvar', name: 'pv', x: 'ramp(pp, 450)' },
     { t: 'mul', x: '2 + 2 * pv' },
@@ -297,6 +415,7 @@ const PRESETS = [
       else: [{ t: 'mul', x: '1 - 0.3 * clamp((0.4 - speed_share) / 0.25, 0, 1)' }] },
     { t: 'if', cond: 'is_relax', then: [{ t: 'mul', x: '0.35' }], else: [] },
     { t: 'clampmax', x: '3000' }] },
+
   { name: '🏆 Tryhard (competitive)', tags: 'competitive accuracy skill balanced serious', flow: [
     { t: 'comment', text: 'reward accuracy, punish misses, softcap the top' },
     { t: 'mul', x: '0.9 + 0.5 * ramp(pp, 600)' },
@@ -306,86 +425,222 @@ const PRESETS = [
     { t: 'if', cond: 'stars < 3', then: [{ t: 'mul', x: '0.6' }], else: [] },
     { t: 'if', cond: 'is_relax', then: [{ t: 'mul', x: '0.3' }], else: [] },
     { t: 'softcap', cap: '1200', exp: '0.75' }] },
+
   { name: '✌️ Flat 2x', tags: 'simple double flat multiplier', flow: [{ t: 'mul', x: '2.0' }] },
+
   { name: '😌 Relax Buff', tags: 'relax rx boost', flow: [
     { t: 'if', cond: 'is_relax', then: [{ t: 'mul', x: '1.2' }], else: [] }] },
-  { name: '⭐ Anti-Farm', tags: 'star rating difficulty nerf low high', flow: [
+
+  { name: '⭐ Anti-Farm', tags: 'anti-farm farm star rating difficulty nerf low high', flow: [
     { t: 'mul', x: '1.5 + 1.5 * ramp(pp, 500)' },
     { t: 'if', cond: 'stars > 6', then: [{ t: 'mul', x: '1 + min(0.1 * (stars - 6), 0.5)' }], else: [] },
     { t: 'if', cond: 'stars < 3', then: [{ t: 'mul', x: '0.4' }], else: [] }] },
+
   { name: '💯 Accuracy Meta', tags: 'accuracy precision acc bonus', flow: [
     { t: 'mul', x: '1.2' },
     { t: 'mul', x: '1 + 0.6 * clamp((acc - 90) / 10, 0, 1)' },
     { t: 'if', cond: 'nmiss > 0', then: [{ t: 'mul', x: 'max(1 - 0.05 * nmiss, 0.5)' }], else: [] }] },
+
   { name: '🚀 High Ceiling', tags: 'uncapped skill top back-loaded', flow: [
     { t: 'mul', x: '1 + 2 * (ramp(pp, 800) ** 2)' },
     { t: 'if', cond: 'stars > 7', then: [{ t: 'mul', x: '1 + 0.15 * (stars - 7)' }], else: [] }] },
+
   { name: '🙅 Nomod Andy', tags: 'nomod purist mod nerf vanilla', flow: [
     { t: 'mul', x: '1.5' },
     { t: 'if', cond: 'mods == 0', then: [{ t: 'mul', x: '1.5' }], else: [{ t: 'mul', x: '0.8' }] }] },
-  { name: '🕶️ HD Diff', tags: 'hidden reading mod', flow: [
+
+  { name: '🕶️ HD Diff', tags: 'hidden hd reading mod', flow: [
     { t: 'mul', x: '1.5' },
     { t: 'if', cond: 'is_hd', then: [{ t: 'mul', x: '1.15' }], else: [] }] },
+
+  { name: '🌊 Aim God', tags: 'aim jump stream nerf-stream nerf', flow: [
+    { t: 'setvar', name: 'pv', x: 'ramp(pp, 500)' },
+    { t: 'mul', x: '1.5 + 2 * pv' },
+    { t: 'if', cond: 'speed_share > 0.4',
+      then: [{ t: 'mul', x: '1 - 0.35 * clamp((speed_share - 0.4) / 0.25, 0, 1)' }],
+      else: [{ t: 'mul', x: '1 + 0.5 * clamp((0.4 - speed_share) / 0.25, 0, 1)' }] },
+    { t: 'if', cond: 'diff_aim > 5', then: [{ t: 'mul', x: '1 + min(0.08 * (diff_aim - 5), 0.6)' }], else: [] },
+    { t: 'if', cond: 'is_relax', then: [{ t: 'mul', x: '0.4' }], else: [] },
+    { t: 'clampmax', x: '4000' }] },
+
+  { name: '🎯 Precision Only', tags: 'accuracy competitive miss precision', flow: [
+    { t: 'mul', x: '1.0 + 0.3 * ramp(pp, 700)' },
+    { t: 'if', cond: 'acc >= 97', then: [{ t: 'mul', x: '1 + 0.5 * clamp((acc - 97) / 3, 0, 1)' }], else: [] },
+    { t: 'if', cond: 'acc < 90', then: [{ t: 'mul', x: '0.6' }], else: [] },
+    { t: 'if', cond: 'nmiss > 0', then: [{ t: 'mul', x: 'max(1 - 0.08 * nmiss, 0.4)' }], else: [] },
+    { t: 'if', cond: 'is_relax', then: [{ t: 'mul', x: '0.25' }], else: [] },
+    { t: 'softcap', cap: '1500', exp: '0.7' }] },
+
+  { name: '🕐 Marathon Mode', tags: 'length marathon duration endurance song', flow: [
+    { t: 'mul', x: '1.2 + 1.0 * ramp(pp, 500)' },
+    { t: 'mul', x: '1 + 0.8 * clamp((length - 90) / 300, 0, 1)' },
+    { t: 'if', cond: 'length > 300', then: [{ t: 'mul', x: '1.2' }], else: [] },
+    { t: 'if', cond: 'is_relax', then: [{ t: 'mul', x: '0.4' }], else: [] },
+    { t: 'clampmax', x: '5000' }] },
+
+  { name: '⚡ Speed Demon', tags: 'speed stream clicking fast', flow: [
+    { t: 'setvar', name: 'pv', x: 'ramp(pp, 450)' },
+    { t: 'mul', x: '1.6 + 2.4 * pv' },
+    { t: 'if', cond: 'note_density > 2', then: [{ t: 'mul', x: '1 + min(0.08 * (note_density - 2), 0.6)' }], else: [] },
+    { t: 'if', cond: 'speed_share > 0.5', then: [{ t: 'mul', x: '1 + 0.4 * clamp((speed_share - 0.5) / 0.3, 0, 1)' }], else: [] },
+    { t: 'if', cond: 'is_relax', then: [{ t: 'mul', x: '0.3' }], else: [] },
+    { t: 'clampmax', x: '4500' }] },
+
+  { name: '🧊 Ice Cold Farm Kill', tags: 'anti-farm farm nerf stars aggressive', flow: [
+    { t: 'comment', text: 'aggressively kill low-effort farm' },
+    { t: 'mul', x: '1.3 + 1.2 * ramp(pp, 600)' },
+    { t: 'if', cond: 'stars < 4', then: [{ t: 'mul', x: '0.35' }], else: [] },
+    { t: 'if', cond: 'length > 0 and length < 90', then: [{ t: 'mul', x: '0.5' }], else: [] },
+    { t: 'if', cond: 'stars >= 6', then: [{ t: 'mul', x: '1 + min(0.08 * (stars - 6), 0.4)' }], else: [] },
+    { t: 'if', cond: 'is_relax', then: [{ t: 'mul', x: '0.3' }], else: [] },
+    { t: 'clampmax', x: '3500' }] },
+
+  { name: '🌈 Rainbow Balance', tags: 'balanced mixed fun', flow: [
+    { t: 'mul', x: '1.4 + 1.1 * ramp(pp, 500)' },
+    { t: 'if', cond: 'speed_share > 0.4',
+      then: [{ t: 'mul', x: '1 + 0.15 * clamp((speed_share - 0.4) / 0.3, 0, 1)' }],
+      else: [{ t: 'mul', x: '1 + 0.1 * clamp((0.4 - speed_share) / 0.3, 0, 1)' }] },
+    { t: 'if', cond: 'acc >= 96', then: [{ t: 'mul', x: '1 + 0.1 * clamp((acc - 96) / 4, 0, 1)' }], else: [] },
+    { t: 'if', cond: 'is_relax', then: [{ t: 'mul', x: '0.5' }], else: [] },
+    { t: 'clampmax', x: '3000' }] },
+
+  { name: '🦾 HR Titan', tags: 'hardrock hr mods', flow: [
+    { t: 'mul', x: '1.5 + 1.5 * ramp(pp, 500)' },
+    { t: 'if', cond: 'is_hr', then: [{ t: 'mul', x: '1.35' }], else: [] },
+    { t: 'if', cond: 'is_ez', then: [{ t: 'mul', x: '0.7' }], else: [] },
+    { t: 'if', cond: 'is_relax', then: [{ t: 'mul', x: '0.4' }], else: [] },
+    { t: 'clampmax', x: '4000' }] },
+
+  { name: '🕶️ Hidden Grind', tags: 'hidden hd reading mods', flow: [
+    { t: 'mul', x: '1.5 + 1.5 * ramp(pp, 500)' },
+    { t: 'if', cond: 'is_hd', then: [{ t: 'mul', x: '1.25' }], else: [] },
+    { t: 'if', cond: 'is_hd and is_hr', then: [{ t: 'mul', x: '1.15' }], else: [] },
+    { t: 'if', cond: 'is_relax', then: [{ t: 'mul', x: '0.4' }], else: [] },
+    { t: 'clampmax', x: '4000' }] },
+
+  { name: '🐌 Half Time Chill', tags: 'halftime ht chill mods', flow: [
+    { t: 'mul', x: '1.4 + 1.2 * ramp(pp, 450)' },
+    { t: 'if', cond: 'is_ht', then: [{ t: 'mul', x: '1.3' }], else: [] },
+    { t: 'if', cond: 'is_dt', then: [{ t: 'mul', x: '0.75' }], else: [] },
+    { t: 'if', cond: 'is_relax', then: [{ t: 'mul', x: '0.4' }], else: [] },
+    { t: 'clampmax', x: '3500' }] },
+
+  { name: '🚀 No Cap Chaos', tags: 'farm chaos uncapped degenerate', flow: [
+    { t: 'mul', x: '5 + 5 * ramp(pp, 400)' },
+    { t: 'if', cond: 'is_dt', then: [{ t: 'mul', x: '1.3' }], else: [] },
+    { t: 'if', cond: 'is_relax', then: [{ t: 'mul', x: '0.6' }], else: [] }] },
+
+  { name: '🧮 Star Scaling', tags: 'stars difficulty bands', flow: [
+    { t: 'comment', text: 'pp driven almost entirely by star-rating bands, not raw pp' },
+    { t: 'set', x: 'pp * 0.3' },
+    { t: 'if', cond: 'stars >= 8', then: [{ t: 'add', x: '3000' }], else: [] },
+    { t: 'if', cond: 'stars >= 6 and stars < 8', then: [{ t: 'add', x: '1500' }], else: [] },
+    { t: 'if', cond: 'stars >= 4 and stars < 6', then: [{ t: 'add', x: '600' }], else: [] },
+    { t: 'if', cond: 'stars < 4', then: [{ t: 'add', x: '100' }], else: [] },
+    { t: 'if', cond: 'is_relax', then: [{ t: 'mul', x: '0.4' }], else: [] },
+    { t: 'clampmax', x: '5000' }] },
+
+  { name: '🥋 Flashlight Focus', tags: 'flashlight fl mods vision', flow: [
+    { t: 'mul', x: '1.5 + 1.5 * ramp(pp, 500)' },
+    { t: 'if', cond: 'is_fl', then: [{ t: 'mul', x: '1.4' }], else: [] },
+    { t: 'if', cond: 'diff_flashlight > 3', then: [{ t: 'mul', x: '1 + min(0.05 * (diff_flashlight - 3), 0.3)' }], else: [] },
+    { t: 'if', cond: 'is_relax', then: [{ t: 'mul', x: '0.4' }], else: [] },
+    { t: 'clampmax', x: '4000' }] },
+
+  { name: '🫡 Autopilot Amnesty', tags: 'autopilot ap casual fun chill', flow: [
+    { t: 'comment', text: 'a chill server where autopilot is rewarded instead of shunned' },
+    { t: 'mul', x: '1.3 + 1.0 * ramp(pp, 400)' },
+    { t: 'if', cond: 'is_ap', then: [{ t: 'mul', x: '1.5' }], else: [] },
+    { t: 'if', cond: 'is_relax', then: [{ t: 'mul', x: '0.6' }], else: [] },
+    { t: 'clampmax', x: '2500' }] },
+
+  { name: '🔥 Double Trouble', tags: 'doubletime double time hardrock dt hr combo', flow: [
+    { t: 'mul', x: '1.5 + 1.5 * ramp(pp, 500)' },
+    { t: 'if', cond: 'is_dt', then: [{ t: 'mul', x: '1.2' }], else: [] },
+    { t: 'if', cond: 'is_hr', then: [{ t: 'mul', x: '1.2' }], else: [] },
+    { t: 'if', cond: 'is_dt and is_hr', then: [{ t: 'mul', x: '1.15' }], else: [] },
+    { t: 'if', cond: 'is_relax', then: [{ t: 'mul', x: '0.4' }], else: [] },
+    { t: 'clampmax', x: '4000' }] },
+
+  { name: '🐢 Endurance Trial', tags: 'stamina endurance marathon length', flow: [
+    { t: 'mul', x: '1.4 + 1.3 * ramp(pp, 500)' },
+    { t: 'if', cond: 'stamina > 2', then: [{ t: 'mul', x: '1 + min(0.1 * (stamina - 2), 0.5)' }], else: [] },
+    { t: 'mul', x: '1 + 0.4 * clamp((length - 150) / 300, 0, 1)' },
+    { t: 'if', cond: 'is_relax', then: [{ t: 'mul', x: '0.4' }], else: [] },
+    { t: 'clampmax', x: '4500' }] },
+
+  { name: '🎻 Rhythm Reader', tags: 'rhythm reading', flow: [
+    { t: 'mul', x: '1.4 + 1.4 * ramp(pp, 500)' },
+    { t: 'if', cond: 'rhythm > 1', then: [{ t: 'mul', x: '1 + min(0.15 * (rhythm - 1), 0.5)' }], else: [] },
+    { t: 'if', cond: 'color > 1', then: [{ t: 'mul', x: '1 + min(0.05 * (color - 1), 0.2)' }], else: [] },
+    { t: 'if', cond: 'is_relax', then: [{ t: 'mul', x: '0.4' }], else: [] },
+    { t: 'clampmax', x: '4000' }] },
+
+  { name: '🏰 The Whole Shebang', tags: 'everything demo advanced all', flow: [
+    { t: 'comment', text: 'THE WHOLE SHEBANG - a demo preset touching almost every variable available' },
+    { t: 'setvar', name: 'pv', x: 'ramp(pp, 500)' },
+    { t: 'comment', text: '1) base curve' },
+    { t: 'mul', x: '1.2 + 1.3 * (pv ** 0.5)' },
+    { t: 'comment', text: '2) stream vs aim skew' },
+    { t: 'if', cond: 'speed_share > 0.4',
+      then: [{ t: 'mul', x: '1 + 0.3 * clamp((speed_share - 0.4) / 0.25, 0, 1)' }],
+      else: [{ t: 'mul', x: '1 - 0.1 * clamp((0.4 - speed_share) / 0.25, 0, 1)' }] },
+    { t: 'comment', text: '3) big jump maps via aim difficulty' },
+    { t: 'if', cond: 'diff_aim > 6', then: [{ t: 'mul', x: '1 + min(0.04 * (diff_aim - 6), 0.25)' }], else: [] },
+    { t: 'comment', text: '4) fast clicking via note density' },
+    { t: 'if', cond: 'note_density > 3', then: [{ t: 'mul', x: '1 + min(0.04 * (note_density - 3), 0.2)' }], else: [] },
+    { t: 'comment', text: '5) accuracy reward' },
+    { t: 'if', cond: 'acc >= 96', then: [{ t: 'mul', x: '1 + 0.15 * clamp((acc - 96) / 4, 0, 1)' }], else: [] },
+    { t: 'comment', text: '6) miss punishment' },
+    { t: 'if', cond: 'nmiss > 0', then: [{ t: 'mul', x: 'max(1 - 0.02 * nmiss, 0.75)' }], else: [] },
+    { t: 'comment', text: '7) star rating shaping' },
+    { t: 'if', cond: 'stars < 3', then: [{ t: 'mul', x: '0.6' }], else: [] },
+    { t: 'if', cond: 'stars > 7', then: [{ t: 'mul', x: '1 + min(0.05 * (stars - 7), 0.25)' }], else: [] },
+    { t: 'comment', text: '8) song duration bonus' },
+    { t: 'mul', x: '1 + 0.2 * clamp((length - 120) / 300, 0, 1)' },
+    { t: 'comment', text: '9) stamina + rhythm flavor' },
+    { t: 'if', cond: 'stamina > 3', then: [{ t: 'mul', x: '1 + min(0.03 * (stamina - 3), 0.15)' }], else: [] },
+    { t: 'if', cond: 'rhythm > 2', then: [{ t: 'mul', x: '1 + min(0.03 * (rhythm - 2), 0.15)' }], else: [] },
+    { t: 'comment', text: '10) mod flavor' },
+    { t: 'if', cond: 'is_hd', then: [{ t: 'mul', x: '1.05' }], else: [] },
+    { t: 'if', cond: 'is_fl', then: [{ t: 'mul', x: '1.1' }], else: [] },
+    { t: 'if', cond: 'is_ez', then: [{ t: 'mul', x: '1.1' }], else: [] },
+    { t: 'comment', text: '11) relax + autopilot discounts' },
+    { t: 'if', cond: 'is_relax', then: [{ t: 'mul', x: '0.35' }], else: [] },
+    { t: 'if', cond: 'is_ap', then: [{ t: 'mul', x: '0.5' }], else: [] },
+    { t: 'comment', text: '12) keep the top tidy' },
+    { t: 'softcap', cap: '3500', exp: '0.78' }] },
 ];
+
+const PRESET_SHOW_DEFAULT = 10;
+let presetExpanded = false;
 
 function renderPresets(filter) {
   const box = document.getElementById('preset-list'); box.innerHTML = '';
-  const f = (filter || '').toLowerCase();
-  PRESETS.filter(p => !f || p.name.toLowerCase().includes(f) || p.tags.includes(f)).forEach(p => {
-    const chip = el('button', 'button is-small ops-chip', p.name); chip.type = 'button';
+  const q = (filter || '').toLowerCase().trim();
+  let list = PRESETS.filter(p => !q || p.name.toLowerCase().includes(q) || p.tags.includes(q));
+  const total = list.length;
+  let limited = false;
+  if (!q && !presetExpanded && list.length > PRESET_SHOW_DEFAULT) {
+    list = list.slice(0, PRESET_SHOW_DEFAULT);
+    limited = true;
+  }
+  list.forEach(p => {
+    const chip = el('button', 'button is-small ops-chip', p.name);
+    chip.type = 'button';
+    chip.title = p.tags;
     chip.onclick = () => { flow = JSON.parse(JSON.stringify(p.flow)); renderFlow(); };
     box.appendChild(chip);
   });
-  if (!box.children.length) box.appendChild(el('span', 'ops-hint', 'no presets match 🦗'));
+  if (!list.length) box.appendChild(el('span', 'ops-hint', 'no presets match 🦗'));
+  if (limited) {
+    const more = el('button', 'button is-small ops-showmore', `+ show all ${total} presets`);
+    more.type = 'button';
+    more.onclick = () => { presetExpanded = true; renderPresets(document.getElementById('preset-search').value); };
+    box.appendChild(more);
+  }
 }
 document.getElementById('preset-search').oninput = (e) => renderPresets(e.target.value);
-
-// ── import / export ────────────────────────────────────────────────────────
-function validFlow(stmts, depth) {
-  if (depth > 12 || !Array.isArray(stmts) || stmts.length > 200) return false;
-  return stmts.every(b => {
-    if (!b || typeof b !== 'object' || typeof b.t !== 'string') return false;
-    if (b.t === 'if') return validFlow(b.then || [], depth + 1) && validFlow(b.else || [], depth + 1);
-    return true;
-  });
-}
-document.getElementById('btn-export').onclick = () => {
-  const date = new Date().toISOString().slice(0, 10);
-  const markup = JSON.stringify({ ops_pp: 1, exported: date, flow }, null, 2);
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([markup], { type: 'application/json' }));
-  a.download = 'pp-flow-' + date + '.opspp.json';
-  document.body.appendChild(a); a.click(); a.remove();
-  URL.revokeObjectURL(a.href);
-};
-function loadMarkup(text) {
-  const msg = document.getElementById('import-msg');
-  const fail = (m) => { msg.innerHTML = ''; const n = el('div', 'notification is-danger'); n.textContent = '❌ ' + m; msg.appendChild(n); };
-  let data;
-  try { data = JSON.parse(text); } catch (e) { return fail('not valid JSON — ' + e.message); }
-  const f = Array.isArray(data) ? data : (data && data.flow);
-  if (!Array.isArray(f)) return fail('no pp flow found in that markup');
-  if (!validFlow(f, 0)) return fail('that markup has malformed or too-deeply-nested blocks');
-  flow = JSON.parse(JSON.stringify(f));
-  renderFlow();
-  msg.innerHTML = '';
-  const n = el('div', 'notification is-success');
-  n.textContent = '✅ imported ' + f.length + ' block(s) — press Compile to validate, then Save to apply';
-  msg.appendChild(n);
-}
-document.getElementById('btn-import-text').onclick = () => {
-  const t = document.getElementById('import-text').value.trim();
-  if (t) loadMarkup(t);
-};
-document.getElementById('import-file').onchange = (e) => {
-  const file = e.target.files[0];
-  if (!file) return;
-  const r = new FileReader();
-  r.onload = () => loadMarkup(String(r.result));
-  r.onerror = () => { document.getElementById('import-msg').innerHTML = '<div class="notification is-danger">❌ could not read that file</div>'; };
-  r.readAsText(file);
-  e.target.value = '';
-};
 
 // ── boot ───────────────────────────────────────────────────────────────────
 renderPresets('');

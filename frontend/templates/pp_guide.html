@@ -32,6 +32,7 @@
       <a href="#skill">Streams vs aim</a>
       <a href="#acc">Accuracy &amp; misses</a>
       <a href="#stars">Star rating</a>
+      <a href="#length">Song duration &amp; note density</a>
       <a href="#caps">Caps &amp; softcaps</a>
       <a href="#relax">Relax</a>
       <a href="#weighting">From play pp to profile pp</a>
@@ -138,7 +139,11 @@
         <tr><td><code>pp_aim</code>, <code>pp_speed</code>, <code>pp_acc</code>, <code>pp_flashlight</code></td><td>the skill breakdown of the raw pp</td></tr>
         <tr><td><code>speed_share</code></td><td><code>pp_speed / (pp_aim + pp_speed)</code> — 0 = pure aim, 1 = pure stream</td></tr>
         <tr><td><code>aim_share</code></td><td><code>1 − speed_share</code></td></tr>
-        <tr><td><code>is_relax</code>, <code>is_dt</code>, <code>is_hd</code>, <code>is_hr</code>, <code>is_ez</code>, <code>is_fl</code></td><td>quick 1/0 mod flags</td></tr>
+        <tr><td><code>is_relax</code>, <code>is_dt</code>, <code>is_hd</code>, <code>is_hr</code>, <code>is_ez</code>, <code>is_fl</code>, <code>is_nf</code>, <code>is_so</code>, <code>is_sd</code>, <code>is_pf</code>, <code>is_ht</code>, <code>is_ap</code></td><td>quick 1/0 mod flags (nofail/spunout/suddendeath/perfect/halftime/autopilot)</td></tr>
+        <tr><td><code>length</code></td><td>song duration in seconds (see <a href="#length">below</a>)</td></tr>
+        <tr><td><code>note_density</code></td><td><code>speed_note_count / length</code> — notes/sec, a fast-clicking proxy</td></tr>
+        <tr><td><code>diff_aim</code>, <code>diff_speed</code>, <code>diff_flashlight</code></td><td>per-skill difficulty components (not the pp contribution — the underlying difficulty)</td></tr>
+        <tr><td><code>slider_factor</code>, <code>stamina</code>, <code>rhythm</code>, <code>color</code>, <code>peak</code></td><td>the rest of the difficulty breakdown — see <a href="#length">below</a></td></tr>
       </table>
       <p>Available in your install: {% for v in pp_vars %}<code>{{ v }}</code> {% endfor %}</p>
 
@@ -275,6 +280,39 @@ DT + HD →  is_dt and is_hd</code></pre>
       <p>Lower <code>exp</code> = harsher squeeze (0.5 is very flat); closer to 1 = gentler. The best
       plays still rank above good plays, just not by a runaway margin.</p>
 
+      <h2 id="length">Song duration &amp; note density (new in v4)</h2>
+      <p><code>length</code> is the song's duration in seconds, read straight from the beatmap file
+      (approximated from its last hit object — a few seconds off on maps ending in a long slider or
+      spinner, close enough for a duration bonus). A "marathon bonus" rewards longer maps:</p>
+      <pre><code>✖️ multiply pp by 1 + 0.3 * clamp((length - 120) / 300, 0, 1)</code></pre>
+      <p>0% bonus at 2 minutes or under, ramping to <b>+30%</b> by 7 minutes. Because
+      <code>clamp</code> floors at 0, this is safe to leave unconditional — a play with unknown
+      length (<code>length = 0</code>) just gets no bonus instead of erroring.</p>
+      <p><code>note_density</code> is <code>speed_note_count / length</code> — how many "speed"
+      notes land per second, a proxy for sustained fast clicking that (unlike raw note counts)
+      stays comparable between a 90-second map and a 5-minute one:</p>
+      <pre><code>❓ if note_density &gt; 3:
+   ✖️ multiply pp by 1 + min(0.06 * (note_density - 3), 0.35)</code></pre>
+      <p>Maps under ~3 notes/sec get nothing; busier maps ramp up to +35%.</p>
+
+      <h3>Big jump maps</h3>
+      <p>There's no separate "jump distance" stat exposed by the calculator — <code>diff_aim</code>
+      (the map's aim-difficulty component) is the closest available proxy, since heavy spacing and
+      big jumps are what drive aim difficulty up in the first place:</p>
+      <pre><code>❓ if diff_aim &gt; 5:
+   ✖️ multiply pp by 1 + min(0.05 * (diff_aim - 5), 0.4)</code></pre>
+      <p>This can't distinguish "spaced jumps" from "dense flow aim" — both raise <code>diff_aim</code>.
+      If your calculator version exposes finer-grained aim sub-stats later, swap this condition out;
+      until then it's the best signal available.</p>
+
+      <h3>The rest of the difficulty breakdown</h3>
+      <p>A few more components are exposed for niche rulesets: <code>diff_speed</code> (raw speed
+      difficulty), <code>diff_flashlight</code> (FL-specific difficulty), <code>slider_factor</code>
+      (how much sliders reduce difficulty vs pure circles), <code>stamina</code> (endurance /
+      sustained tapping), <code>rhythm</code> (rhythmic complexity), <code>color</code> (note-color
+      alternation reading, mostly taiko), and <code>peak</code> (the hardest moment of the map). Use
+      them the same way as <code>diff_aim</code>: <code>if diff_x &gt; threshold: buff/nerf</code>.</p>
+
       <h2 id="relax">Relax</h2>
       <p>Relax plays are flagged by <code>is_relax</code> (the RX mod, or a relax game mode). Because
       relax removes the hardest skill (tapping accuracy), servers usually discount it so it can share
@@ -317,8 +355,10 @@ DT + HD →  is_dt and is_hd</code></pre>
       <p>Press <b>Compile</b> to see the generated Python and confirm it's valid, watch the readable
       preview match your intent, then <b>Save and Update</b>. That's a complete, original ruleset in
       six blocks.</p>
-      <div class="ops-callout">Tip: start from the closest preset (the search box up top) and adjust,
-      rather than from an empty flow. "Tryhard" is a great base for competitive tweaks.</div>
+      <div class="ops-callout">Tip: start from the closest preset and adjust, rather than from an
+      empty flow. Only the first 10 presets show by default — search by name <em>or tag</em>
+      (try "stream", "double time", "farm", "relax", "competitive") to find the rest, or hit
+      "show all" to browse everything. "Tryhard" is a great base for competitive tweaks.</div>
 
       <h2 id="recipes">Recipes</h2>
       <h3>Flat inflation</h3>
@@ -348,11 +388,22 @@ DT + HD →  is_dt and is_hd</code></pre>
       </ul>
       <p>Saving runs in the background — the last-update log on the PP page shows progress and a
       "done" line when the new economy is live (a full recalc takes a few minutes).</p>
-      <h3>Import / export</h3>
-      <p>The <b>📦 import / export</b> box saves your current flow to a small <code>.opspp.json</code>
-      file (or loads one). Use it to back up a ruleset before experimenting, move an economy between
-      servers, or share one with someone. Importing only loads the flow into the editor — press
-      <b>Compile</b> to validate it and <b>Save and Update</b> to apply, exactly like any other change.</p>
+      <h3>Editing as text — also your import/export</h3>
+      <p>Below the blocks are two more views of the exact same flow: <b>Flow (JSON)</b> and
+      <b>Readable flow</b> (the same plain-English preview described throughout this guide). All
+      three views — blocks, JSON, markdown — stay in sync in real time, whichever one you edit:</p>
+      <ul>
+        <li>Drag/edit a <b>block</b> and both text boxes update immediately.</li>
+        <li>Type or paste into <b>Flow (JSON)</b> and the blocks + readable text update as soon as it
+        parses as valid JSON.</li>
+        <li>Type into <b>Readable flow</b> using the same bullet format shown (<code>- ✖️ multiply pp
+        by `1.5`</code>, <code>- ❓ if `cond`:</code>, etc.) and it updates the blocks + JSON the same
+        way.</li>
+      </ul>
+      <p>This <em>is</em> the import/export mechanism — no separate dialog needed. To back up a
+      ruleset, copy the JSON box's contents somewhere safe. To load one someone shared, paste it into
+      the JSON box. A parse error shows inline under that box (in red) without touching your current
+      flow, so a bad paste can't wipe out what you had.</p>
 
       <h2 id="gotchas">Gotchas</h2>
       <ul>
