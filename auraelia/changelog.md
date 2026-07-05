@@ -6,6 +6,25 @@ the running history of [Auraelia](https://justharsiz.online) (`-devserver justha
 
 ---
 
+## 2026-07-04 — PP builder v3: visual flow editor 🧩
+
+/admin/pp is now a full drag-and-drop, block-based pp programming tool:
+
+- **visual flow blocks** you stack and reorder: multiply / set / add pp,
+  if-else conditions (nestable), set-variable, cap, floor, softcap,
+  comments — runs top to bottom, live "readable flow" preview beside it
+- **a real formula language** in every block: variables (`pp`, `acc`,
+  `stars`, `nmiss`, `combo`, `speed_share`, `is_dt`, `is_relax`, …),
+  functions (`ramp`, `clamp`, `lerp`, `iif`, `min/max`, `has_mod`, …),
+  full arithmetic + comparisons + `and/or/not`. safely parsed and
+  compiled to Python — no `eval`, injection-proof
+- **Compile** button: validates + shows the exact generated Python;
+  **Save and Update** recalcs every score and restarts the server
+- **13 searchable presets**: Bancho Classic, Auraelia v3, DT Priority,
+  Farm Heaven, Stream Dream, Tryhard, Accuracy Meta, Anti-Farm,
+  High Ceiling, Nomod Andy, and more — one click to load & tweak
+- admin panel UI cleaned up across the board (tabs, tables, dashboard)
+
 ## 2026-07-04 — PP builder v2: full tinker mode + presets ✨
 
 /admin/pp got a massive upgrade:

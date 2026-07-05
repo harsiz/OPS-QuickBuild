@@ -1,0 +1,107 @@
+/* OPS_QuickBuild — admin panel polish + pp flow builder 😎
+   scoped-ish styling that layers on top of guweb/bulma. */
+
+.ops-admin, .container.ops-pp { max-width: 1180px; }
+
+/* tabs — consistent, readable */
+.ops-tabs { margin-bottom: 18px; }
+.ops-tabs ul { border-bottom-color: hsla(var(--main, 265), 30%, 50%, .25); }
+.ops-tabs li a { border: 0 !important; padding: .5em 1.1em; opacity: .7; transition: opacity .15s; }
+.ops-tabs li a:hover { opacity: 1; }
+.ops-tabs li.is-active a {
+  opacity: 1; font-weight: 700;
+  border-bottom: 2px solid hsl(var(--main, 265), 50%, 55%) !important;
+  color: hsl(var(--main, 265), 60%, 70%);
+}
+
+/* boxes / tables tidy-up (fixes the scuffed default spacing) */
+.ops-pp .box, .ops-admin .box { border-radius: 12px; margin-bottom: 18px; }
+.ops-pp .table td, .ops-pp .table th,
+.ops-admin .table td, .ops-admin .table th { vertical-align: middle; border-color: hsla(var(--main,265),20%,50%,.12); }
+.ops-hint { opacity: .55; font-size: 12px; font-weight: 400; }
+.ops-log, .ops-py {
+  background: rgba(0,0,0,.32); padding: 12px; border-radius: 8px;
+  font-size: 12px; line-height: 1.5; overflow-x: auto; white-space: pre;
+}
+.ops-md {
+  background: rgba(0,0,0,.22); padding: 12px; border-radius: 8px;
+  font-family: ui-monospace, monospace; font-size: 12.5px; line-height: 1.6;
+  white-space: pre-wrap; min-height: 60px;
+}
+
+/* preset chips */
+.ops-preset-search { margin-bottom: 12px; }
+.ops-preset-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.ops-chip { border-radius: 20px !important; }
+
+/* ── block editor ── */
+.ops-canvas { display: flex; flex-direction: column; gap: 8px; }
+.ops-block {
+  background: hsla(var(--main,265),18%,20%,.55);
+  border: 1px solid hsla(var(--main,265),30%,50%,.28);
+  border-left: 4px solid hsl(var(--main,265),45%,55%);
+  border-radius: 9px; padding: 8px 10px; cursor: grab;
+}
+.ops-block.dragging { opacity: .45; }
+.ops-block-mul   { border-left-color: #4aa3ff; }
+.ops-block-set   { border-left-color: #b46bff; }
+.ops-block-add   { border-left-color: #4ad991; }
+.ops-block-if    { border-left-color: #ffcc33; }
+.ops-block-setvar{ border-left-color: #ff9f40; }
+.ops-block-clampmax, .ops-block-clampmin { border-left-color: #ff6b6b; }
+.ops-block-softcap { border-left-color: #ff8fd0; }
+.ops-block-comment { border-left-color: #7a869a; background: hsla(220,10%,30%,.35); }
+
+.ops-block-head { display: flex; align-items: center; gap: 8px; }
+.ops-grip { cursor: grab; opacity: .4; font-size: 14px; }
+.ops-block-title { font-weight: 700; font-size: 13px; flex: 1; }
+.ops-x {
+  background: transparent; border: 0; color: #ff6b6b; cursor: pointer;
+  font-size: 13px; opacity: .6; padding: 2px 6px; border-radius: 5px;
+}
+.ops-x:hover { opacity: 1; background: rgba(255,107,107,.15); }
+
+.ops-block-body { display: flex; align-items: center; gap: 6px; margin-top: 7px; flex-wrap: wrap; }
+.ops-block-body .input { background: rgba(0,0,0,.28); border-color: hsla(var(--main,265),30%,50%,.3); }
+.ops-f { font-family: ui-monospace, monospace; min-width: 150px; flex: 1; }
+.ops-name { max-width: 110px; }
+.ops-wide { width: 100%; }
+.ops-lbl, .ops-eq { opacity: .6; font-size: 12px; font-weight: 600; }
+
+/* if branches */
+.ops-branch { margin: 7px 0 0 6px; padding-left: 12px; border-left: 2px dashed hsla(var(--main,265),30%,55%,.35); }
+.ops-branch-tag { font-size: 11px; font-weight: 700; opacity: .65; letter-spacing: .06em; margin: 4px 0; display: flex; align-items: center; gap: 6px; }
+.ops-branch-else { color: #ffb454; }
+.ops-sublist { display: flex; flex-direction: column; gap: 6px; }
+.ops-mini {
+  background: hsla(var(--main,265),40%,50%,.25); border: 0; border-radius: 6px;
+  color: inherit; cursor: pointer; font-size: 11px; padding: 1px 8px;
+}
+.ops-mini:hover { background: hsla(var(--main,265),45%,55%,.4); }
+
+/* add-block dropdown */
+.ops-add { margin-top: 2px; }
+.ops-add-sel {
+  background: hsla(var(--main,265),25%,25%,.5); color: inherit; cursor: pointer;
+  border: 1px dashed hsla(var(--main,265),35%,55%,.4); border-radius: 7px;
+  padding: 5px 10px; font-size: 12px;
+}
+
+.ops-btnrow { display: flex; gap: 10px; }
+.ops-cheat code {
+  background: hsla(var(--main,265),30%,40%,.28); color: hsl(var(--main,265),60%,80%);
+  padding: 1px 6px; border-radius: 5px; font-size: 12px; display: inline-block; margin: 2px 1px;
+}
+.ops-py { max-height: 360px; overflow-y: auto; }
+
+/* ── admin-wide polish (this stylesheet only loads on /admin pages) ── */
+.box { border-radius: 12px; }
+.table { background: transparent; }
+.table td, .table th { vertical-align: middle; border-color: hsla(var(--main,265),20%,50%,.12); }
+.title, .subtitle { word-break: break-word; }
+.sidebar .nav-link { border-radius: 8px; padding: 8px 12px; transition: background .15s, opacity .15s; opacity: .8; }
+.sidebar .nav-link:hover { background: hsla(var(--main,265),35%,50%,.18); opacity: 1; }
+.notification { border-radius: 10px; }
+.user-block { border-radius: 8px; }
+.button { border-radius: 8px; }
+details > summary { cursor: pointer; }

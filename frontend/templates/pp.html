@@ -2,10 +2,11 @@
 {% block title %} PP Builder {% endblock %}
 
 {% block content %}
-<div class="container" style="padding: 24px 12px;">
-  <h1 class="title">🧮 PP calculation builder</h1>
+<link rel="stylesheet" href="/static/css/ops-admin.css">
+<div class="container ops-pp" style="padding: 24px 12px;">
+  <h1 class="title">🧮 PP calculation flow builder</h1>
 
-  <div class="tabs">
+  <div class="tabs ops-tabs">
     <ul>
       <li><a href="/admin/">Dashboard</a></li>
       <li><a href="/admin/users">Users</a></li>
@@ -18,270 +19,312 @@
   {% if msg %}
   <div class="notification {{ 'is-danger' if st == 'error' else 'is-success' }}">{{ msg }}</div>
   {% endif %}
-
   {% if handwritten %}
   <div class="notification is-warning">
-    ⚠️ the current pp profile was hand-written (not made by this builder). the form shows
-    defaults — saving will <b>replace</b> the hand-written profile (a .bak is kept).
+    ⚠️ the current profile was hand-written (not from this builder). the editor is showing the
+    default flow — saving will <b>replace</b> the hand-written file (a .bak is kept).
   </div>
   {% endif %}
-
   {% if log_tail %}
   <div class="box">
     <h2 class="subtitle is-6">📜 last update log</h2>
-    <pre style="background: rgba(0,0,0,.3); padding: 10px; font-size: 12px;">{{ log_tail }}</pre>
+    <pre class="ops-log">{{ log_tail }}</pre>
   </div>
   {% endif %}
 
+  <!-- presets -->
   <div class="box">
-    <h2 class="subtitle">✨ presets <span class="is-size-7" style="opacity:.6;">(fills the form — nothing is saved until you hit Save and Update)</span></h2>
-    <div class="buttons">
-      <button type="button" class="button is-small" onclick="applyPreset('bancho')">🏛️ bancho classic (1x)</button>
-      <button type="button" class="button is-small" onclick="applyPreset('auraelia_v3')">🥁 auraelia v3</button>
-      <button type="button" class="button is-small" onclick="applyPreset('dt_priority')">⏩ DT priority (v2)</button>
-      <button type="button" class="button is-small" onclick="applyPreset('farm_heaven')">🌾 farm heaven</button>
-      <button type="button" class="button is-small" onclick="applyPreset('stream_dream')">🥁 stream dream</button>
-      <button type="button" class="button is-small" onclick="applyPreset('tryhard')">🏆 tryhard (competitive)</button>
+    <h2 class="subtitle">✨ presets <span class="ops-hint">click to load into the editor — nothing saves until you hit Save and Update</span></h2>
+    <input class="input ops-preset-search" id="preset-search" type="text" placeholder="🔎 search presets (e.g. stream, farm, relax, competitive)…">
+    <div id="preset-list" class="ops-preset-list"></div>
+  </div>
+
+  <div class="columns">
+    <!-- editor -->
+    <div class="column is-7">
+      <div class="box">
+        <h2 class="subtitle">🧩 flow <span class="ops-hint">runs top to bottom, editing <code>pp</code> as it goes</span></h2>
+        <div id="flow-canvas" class="ops-canvas"></div>
+      </div>
+    </div>
+
+    <!-- side panel: preview + cheatsheet -->
+    <div class="column is-5">
+      <div class="box">
+        <h2 class="subtitle">📖 readable flow</h2>
+        <div id="md-preview" class="ops-md"></div>
+      </div>
+      <div class="box">
+        <div class="ops-btnrow">
+          <button type="button" class="button is-info" id="btn-compile">🔧 Compile</button>
+          <button type="button" class="button is-primary" id="btn-save">💾 Save and Update</button>
+        </div>
+        <p class="ops-hint" style="margin-top:8px;">Compile = validate + preview the generated Python.
+        Save = recalc every score &amp; restart the server.</p>
+        <div id="compile-out"></div>
+      </div>
+      <div class="box ops-cheat">
+        <h2 class="subtitle is-6">🧠 variables</h2>
+        <p>{% for v in pp_vars %}<code>{{ v }}</code> {% endfor %}</p>
+        <h2 class="subtitle is-6" style="margin-top:10px;">🔧 functions</h2>
+        <p>{% for f in pp_funcs %}<code>{{ f }}()</code> {% endfor %}</p>
+        <p class="ops-hint" style="margin-top:10px;">operators: <code>+ - * / **</code>,
+        comparisons <code>&gt; &lt; &gt;= &lt;= == !=</code>, <code>and or not</code>.
+        <code>ramp(x, full)</code>=0→1 ramp, <code>clamp(x, lo, hi)</code>,
+        <code>lerp(a, b, t)</code>, <code>iif(cond, a, b)</code>, <code>has_mod(bit)</code>.</p>
+      </div>
     </div>
   </div>
 
-  <form method="post" action="/admin/pp/save"
-        onsubmit="return confirm('save this pp system, recalc ALL scores and restart the game server?');">
-
-    <div class="box">
-      <h2 class="subtitle">📈 base multiplier</h2>
-      <div class="field is-grouped is-grouped-multiline">
-        <div class="control">
-          <label class="label is-small">min (weak plays)</label>
-          <input class="input" type="number" step="0.05" name="base_min" value="{{ cfg.base_min }}">
-        </div>
-        <div class="control">
-          <label class="label is-small">max (best plays)</label>
-          <input class="input" type="number" step="0.05" name="base_max" value="{{ cfg.base_max }}">
-        </div>
-        <div class="control">
-          <label class="label is-small">max reached at (raw pp)</label>
-          <input class="input" type="number" step="10" name="full_at" value="{{ cfg.full_at }}">
-        </div>
-        <div class="control">
-          <label class="label is-small">curve shape</label>
-          <div class="select">
-            <select name="curve">
-              <option value="front" {{ 'selected' if cfg.curve == 'front' }}>front-loaded (mid plays ~70% up)</option>
-              <option value="linear" {{ 'selected' if cfg.curve == 'linear' }}>linear (even spread)</option>
-              <option value="back" {{ 'selected' if cfg.curve == 'back' }}>back-loaded (top-heavy)</option>
-            </select>
-          </div>
-        </div>
-        <div class="control">
-          <label class="label is-small">custom curve exp <span style="opacity:.5;">(blank = use shape; &lt;1 front, &gt;1 back)</span></label>
-          <input class="input" type="number" step="0.05" name="curve_exp" value="{{ cfg.curve_exp or '' }}" placeholder="e.g. 0.45">
-        </div>
-      </div>
-    </div>
-
-    <div class="box">
-      <h2 class="subtitle">🎛️ mod rules</h2>
-      {% set rules = cfg.mod_rules + [{}, {}, {}, {}] %}
-      {% for rule in rules[:8] %}
-      <div class="field is-grouped">
-        <div class="control">
-          <div class="select">
-            <select name="mod_bit">
-              <option value="">— mod —</option>
-              {% for bit, label in mod_choices %}
-              <option value="{{ bit }}" {{ 'selected' if rule.get('bit') == bit }}>{{ label }}</option>
-              {% endfor %}
-            </select>
-          </div>
-        </div>
-        <div class="control">
-          <input class="input" type="number" step="1" name="mod_pct" style="width: 110px;"
-                 placeholder="± %" value="{{ rule.get('pct', '') }}">
-        </div>
-        <div class="control">
-          <div class="select">
-            <select name="mod_scale">
-              <option value="flat" {{ 'selected' if rule.get('scale') == 'flat' }}>flat bonus</option>
-              <option value="ramp" {{ 'selected' if rule.get('scale') == 'ramp' }}>scales with play value</option>
-            </select>
-          </div>
-        </div>
-      </div>
-      {% endfor %}
-      <p class="is-size-7" style="opacity:.6;">negative % = nerf. "scales with play value" means the full
-      % only applies to plays at the top of the base curve. one rule per mod, empty rows skipped.</p>
-    </div>
-
-    <div class="box">
-      <h2 class="subtitle">🎯 skill-based rules <span class="is-size-7" style="opacity:.6;">(from the calculator's per-play aim/speed breakdown)</span></h2>
-      <div class="field is-grouped is-grouped-multiline">
-        <div class="control">
-          <label class="label is-small">stream/burst buff (max +%)</label>
-          <input class="input" type="number" step="1" name="stream_buff" value="{{ cfg.stream_buff }}">
-        </div>
-        <div class="control">
-          <label class="label is-small">aim map nerf (max -%)</label>
-          <input class="input" type="number" step="1" name="aim_nerf" value="{{ cfg.aim_nerf }}">
-        </div>
-        <div class="control">
-          <label class="label is-small">neutral speed share <span style="opacity:.5;">(default 0.40)</span></label>
-          <input class="input" type="number" step="0.01" name="speed_neutral" value="{{ cfg.speed_neutral }}">
-        </div>
-        <div class="control">
-          <label class="label is-small">skew range <span style="opacity:.5;">(smaller = more sensitive)</span></label>
-          <input class="input" type="number" step="0.01" name="speed_range" value="{{ cfg.speed_range }}">
-        </div>
-      </div>
-    </div>
-
-    <div class="box">
-      <h2 class="subtitle">⭐ star rating rules <span class="is-size-7" style="opacity:.6;">(0 = off)</span></h2>
-      <div class="field is-grouped is-grouped-multiline">
-        <div class="control">
-          <label class="label is-small">bonus % per star above…</label>
-          <input class="input" type="number" step="1" name="star_bonus_per" value="{{ cfg.star_bonus_per }}">
-        </div>
-        <div class="control">
-          <label class="label is-small">…this many stars</label>
-          <input class="input" type="number" step="0.1" name="star_bonus_from" value="{{ cfg.star_bonus_from }}">
-        </div>
-        <div class="control">
-          <label class="label is-small">bonus cap (%)</label>
-          <input class="input" type="number" step="5" name="star_bonus_cap" value="{{ cfg.star_bonus_cap }}">
-        </div>
-        <div class="control">
-          <label class="label is-small">farm nerf (-%) below…</label>
-          <input class="input" type="number" step="1" name="low_star_nerf" value="{{ cfg.low_star_nerf }}">
-        </div>
-        <div class="control">
-          <label class="label is-small">…this many stars</label>
-          <input class="input" type="number" step="0.1" name="low_star_below" value="{{ cfg.low_star_below }}">
-        </div>
-      </div>
-      <p class="is-size-7" style="opacity:.6;">e.g. "10% per star above 6, cap 50%" makes 7★ plays +10%,
-      8★ +20%… and "30% below 3" guts 2★ farm maps.</p>
-    </div>
-
-    <div class="box">
-      <h2 class="subtitle">💯 accuracy &amp; miss rules <span class="is-size-7" style="opacity:.6;">(0 = off)</span></h2>
-      <div class="field is-grouped is-grouped-multiline">
-        <div class="control">
-          <label class="label is-small">high-acc bonus (max +% at 100%)</label>
-          <input class="input" type="number" step="1" name="acc_bonus_max" value="{{ cfg.acc_bonus_max }}">
-        </div>
-        <div class="control">
-          <label class="label is-small">bonus starts at (acc %)</label>
-          <input class="input" type="number" step="0.5" name="acc_bonus_from" value="{{ cfg.acc_bonus_from }}">
-        </div>
-        <div class="control">
-          <label class="label is-small">low-acc penalty (-%)</label>
-          <input class="input" type="number" step="1" name="acc_penalty" value="{{ cfg.acc_penalty }}">
-        </div>
-        <div class="control">
-          <label class="label is-small">…when acc below (%)</label>
-          <input class="input" type="number" step="0.5" name="acc_penalty_below" value="{{ cfg.acc_penalty_below }}">
-        </div>
-        <div class="control">
-          <label class="label is-small">miss penalty (-% per miss)</label>
-          <input class="input" type="number" step="0.5" name="miss_penalty" value="{{ cfg.miss_penalty }}">
-        </div>
-        <div class="control">
-          <label class="label is-small">miss penalty cap (-%)</label>
-          <input class="input" type="number" step="5" name="miss_penalty_cap" value="{{ cfg.miss_penalty_cap }}">
-        </div>
-      </div>
-    </div>
-
-    <div class="box">
-      <h2 class="subtitle">🧢 limits &amp; global</h2>
-      <div class="field is-grouped is-grouped-multiline">
-        <div class="control">
-          <label class="label is-small">pp cap per play (0 = no cap)</label>
-          <input class="input" type="number" step="50" name="cap" value="{{ cfg.cap or 0 }}">
-        </div>
-        <div class="control">
-          <label class="label is-small">cap style</label>
-          <div class="select">
-            <select name="cap_mode">
-              <option value="hard" {{ 'selected' if cfg.cap_mode == 'hard' }}>hard cap (flat wall)</option>
-              <option value="soft" {{ 'selected' if cfg.cap_mode == 'soft' }}>softcap (diminishing returns past it)</option>
-            </select>
-          </div>
-        </div>
-        <div class="control">
-          <label class="label is-small">softcap exponent <span style="opacity:.5;">(lower = harsher)</span></label>
-          <input class="input" type="number" step="0.05" name="soft_exp" value="{{ cfg.soft_exp }}">
-        </div>
-        <div class="control">
-          <label class="label is-small">relax multiplier</label>
-          <input class="input" type="number" step="0.05" name="relax_factor" value="{{ cfg.relax_factor }}">
-        </div>
-        <div class="control">
-          <label class="label is-small">final global multiplier</label>
-          <input class="input" type="number" step="0.05" name="final_mult" value="{{ cfg.final_mult }}">
-        </div>
-      </div>
-    </div>
-
-    <button class="button is-primary is-medium" type="submit">
-      💾 Save and Update <span class="is-size-7" style="margin-left: 8px; opacity:.7;">(recalcs everything + restarts server)</span>
-    </button>
+  <form method="post" action="/admin/pp/save" id="save-form">
+    <input type="hidden" name="flow_json" id="flow-json-input">
   </form>
-
-  <p class="is-size-7" style="opacity:.6; margin-top: 12px;">
-    order of operations: base curve → mod rules → stream/aim skew → star rules → acc rules →
-    miss penalty → relax → final multiplier → cap. saving backs up the old profile, recalcs
-    <b>every score</b>, rebuilds leaderboards and restarts the game server automatically.
-  </p>
 </div>
 
+<script type="application/json" id="flow-data">{{ flow_json|safe }}</script>
 <script>
-const PRESET_BASE = {
-  base_min: 1.0, base_max: 1.0, full_at: 500, curve: 'linear', curve_exp: '',
-  stream_buff: 0, aim_nerf: 0, speed_neutral: 0.40, speed_range: 0.25,
-  acc_bonus_max: 0, acc_bonus_from: 95, acc_penalty: 0, acc_penalty_below: 85,
-  miss_penalty: 0, miss_penalty_cap: 30,
-  star_bonus_per: 0, star_bonus_from: 6, star_bonus_cap: 50,
-  low_star_nerf: 0, low_star_below: 3,
-  cap: 0, cap_mode: 'hard', soft_exp: 0.8, relax_factor: 1.0, final_mult: 1.0,
-};
-const PRESETS = {
-  bancho:       { fields: {}, mods: [] },
-  auraelia_v3:  { fields: { base_min: 1.5, base_max: 3.5, curve: 'front', stream_buff: 50,
-                            aim_nerf: 15, cap: 4000, relax_factor: 0.35 },
-                  mods: [[2, 45, 'ramp']] },
-  dt_priority:  { fields: { base_min: 3.5, base_max: 5, curve: 'front', cap: 4000,
-                            relax_factor: 0.75 },
-                  mods: [[64, 75, 'ramp']] },
-  farm_heaven:  { fields: { base_min: 4, base_max: 8, full_at: 400, curve: 'front',
-                            stream_buff: 25, relax_factor: 0.5 },
-                  mods: [[64, 30, 'flat'], [8, 10, 'flat']] },
-  stream_dream: { fields: { base_min: 2, base_max: 4, full_at: 450, curve: 'front',
-                            stream_buff: 80, aim_nerf: 30, cap: 3000, relax_factor: 0.35 },
-                  mods: [[64, 20, 'ramp']] },
-  tryhard:      { fields: { base_min: 0.9, base_max: 1.4, full_at: 600, acc_bonus_max: 20,
-                            acc_bonus_from: 96, acc_penalty: 25, acc_penalty_below: 85,
-                            miss_penalty: 3, miss_penalty_cap: 30, cap: 1200,
-                            cap_mode: 'soft', relax_factor: 0.3, low_star_nerf: 40,
-                            low_star_below: 3 },
-                  mods: [[32, 5, 'flat']] },
+// ── model ──────────────────────────────────────────────────────────────────
+let flow = JSON.parse(document.getElementById('flow-data').textContent || '[]');
+
+const BLOCK_TYPES = [
+  ['mul', '✖️ multiply pp'], ['set', '🟰 set pp'], ['add', '➕ add to pp'],
+  ['if', '❓ if / else'], ['setvar', '📦 set variable'],
+  ['clampmax', '🧢 cap (max)'], ['clampmin', '⬆️ floor (min)'],
+  ['softcap', '🪶 softcap'], ['comment', '💬 comment'],
+];
+const NEW_BLOCK = {
+  mul: () => ({ t: 'mul', x: '1.0' }),
+  set: () => ({ t: 'set', x: 'pp' }),
+  add: () => ({ t: 'add', x: '0' }),
+  if: () => ({ t: 'if', cond: 'is_dt', then: [], else: [] }),
+  setvar: () => ({ t: 'setvar', name: 'x', x: '0' }),
+  clampmax: () => ({ t: 'clampmax', x: '4000' }),
+  clampmin: () => ({ t: 'clampmin', x: '0' }),
+  softcap: () => ({ t: 'softcap', cap: '1000', exp: '0.8' }),
+  comment: () => ({ t: 'comment', text: 'note' }),
 };
 
-function applyPreset(name) {
-  const preset = PRESETS[name];
-  const values = Object.assign({}, PRESET_BASE, preset.fields);
-  for (const [key, val] of Object.entries(values)) {
-    const el = document.querySelector(`[name="${key}"]`);
-    if (el) el.value = val;
-  }
-  const bits = document.querySelectorAll('select[name="mod_bit"]');
-  const pcts = document.querySelectorAll('input[name="mod_pct"]');
-  const scales = document.querySelectorAll('select[name="mod_scale"]');
-  bits.forEach((el, i) => { el.value = ''; pcts[i].value = ''; scales[i].value = 'flat'; });
-  (preset.mods || []).forEach((rule, i) => {
-    if (i < bits.length) { bits[i].value = rule[0]; pcts[i].value = rule[1]; scales[i].value = rule[2]; }
-  });
+// ── rendering ──────────────────────────────────────────────────────────────
+function el(tag, cls, txt) { const e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; }
+
+function field(block, key, ph) {
+  const inp = el('input', 'input is-small ops-f');
+  inp.value = block[key] != null ? block[key] : '';
+  inp.placeholder = ph || 'formula';
+  inp.oninput = () => { block[key] = inp.value; refreshMeta(); };
+  return inp;
 }
+
+let dragArr = null, dragIdx = -1;
+
+function renderList(arr, container) {
+  container.innerHTML = '';
+  arr.forEach((block, idx) => container.appendChild(renderBlock(arr, block, idx)));
+  const add = el('div', 'ops-add');
+  const sel = el('select', 'ops-add-sel');
+  sel.appendChild(new Option('+ add block…', ''));
+  BLOCK_TYPES.forEach(([t, label]) => sel.appendChild(new Option(label, t)));
+  sel.onchange = () => { if (sel.value) { arr.push(NEW_BLOCK[sel.value]()); renderFlow(); } };
+  add.appendChild(sel);
+  container.appendChild(add);
+}
+
+function renderBlock(arr, block, idx) {
+  const wrap = el('div', 'ops-block ops-block-' + block.t);
+  wrap.draggable = true;
+  wrap.ondragstart = (e) => { dragArr = arr; dragIdx = idx; e.stopPropagation(); wrap.classList.add('dragging'); };
+  wrap.ondragend = () => wrap.classList.remove('dragging');
+  wrap.ondragover = (e) => { if (dragArr === arr) { e.preventDefault(); e.stopPropagation(); } };
+  wrap.ondrop = (e) => {
+    if (dragArr === arr && dragIdx !== idx) {
+      e.preventDefault(); e.stopPropagation();
+      const [m] = arr.splice(dragIdx, 1); arr.splice(idx, 0, m); renderFlow();
+    }
+  };
+
+  const head = el('div', 'ops-block-head');
+  head.appendChild(el('span', 'ops-grip', '⠿'));
+  const label = Object.fromEntries(BLOCK_TYPES)[block.t] || block.t;
+  head.appendChild(el('span', 'ops-block-title', label));
+  const del = el('button', 'ops-x', '✕');
+  del.type = 'button';
+  del.onclick = () => { arr.splice(idx, 1); renderFlow(); };
+  head.appendChild(del);
+  wrap.appendChild(head);
+
+  const body = el('div', 'ops-block-body');
+  if (block.t === 'comment') {
+    const inp = field(block, 'text', 'note to yourself');
+    inp.classList.add('ops-wide'); body.appendChild(inp);
+  } else if (block.t === 'setvar') {
+    const nm = field(block, 'name', 'name'); nm.classList.add('ops-name');
+    body.appendChild(nm); body.appendChild(el('span', 'ops-eq', '='));
+    body.appendChild(field(block, 'x', 'formula'));
+  } else if (block.t === 'softcap') {
+    body.appendChild(el('span', 'ops-lbl', 'past'));
+    body.appendChild(field(block, 'cap', 'e.g. 1000'));
+    body.appendChild(el('span', 'ops-lbl', 'exp'));
+    body.appendChild(field(block, 'exp', 'e.g. 0.8'));
+  } else if (block.t === 'if') {
+    body.appendChild(el('span', 'ops-lbl', 'when'));
+    body.appendChild(field(block, 'cond', 'e.g. is_dt or acc > 98'));
+    wrap.appendChild(body);
+    const thenBox = el('div', 'ops-branch');
+    thenBox.appendChild(el('div', 'ops-branch-tag', 'THEN'));
+    const thenList = el('div', 'ops-sublist'); block.then = block.then || [];
+    renderList(block.then, thenList); thenBox.appendChild(thenList);
+    wrap.appendChild(thenBox);
+    const elseBox = el('div', 'ops-branch');
+    const hasElse = block.else && block.else.length;
+    const elseTag = el('div', 'ops-branch-tag ops-branch-else');
+    elseTag.appendChild(document.createTextNode('ELSE '));
+    const toggle = el('button', 'ops-mini', hasElse ? '– remove' : '+ add');
+    toggle.type = 'button';
+    toggle.onclick = () => { block.else = (block.else && block.else.length) ? [] : [NEW_BLOCK.mul()]; renderFlow(); };
+    elseTag.appendChild(toggle);
+    elseBox.appendChild(elseTag);
+    if (hasElse) { const elseList = el('div', 'ops-sublist'); renderList(block.else, elseList); elseBox.appendChild(elseList); }
+    wrap.appendChild(elseBox);
+    return wrap;
+  } else {
+    body.appendChild(field(block, 'x', 'formula, e.g. pp * 1.2'));
+  }
+  wrap.appendChild(body);
+  return wrap;
+}
+
+function renderFlow() { renderList(flow, document.getElementById('flow-canvas')); refreshMeta(); }
+
+// ── markdown mirror (matches server) ───────────────────────────────────────
+function flowMd(stmts, depth) {
+  let out = []; const ind = '  '.repeat(depth);
+  (stmts || []).forEach(st => {
+    if (st.t === 'comment') out.push(`${ind}- 💬 *${st.text || ''}*`);
+    else if (st.t === 'mul') out.push(`${ind}- ✖️ multiply pp by \`${st.x || ''}\``);
+    else if (st.t === 'add') out.push(`${ind}- ➕ add \`${st.x || ''}\` to pp`);
+    else if (st.t === 'set') out.push(`${ind}- 🟰 set pp = \`${st.x || ''}\``);
+    else if (st.t === 'setvar') out.push(`${ind}- 📦 let \`${st.name || ''}\` = \`${st.x || ''}\``);
+    else if (st.t === 'clampmax') out.push(`${ind}- 🧢 cap pp at \`${st.x || ''}\``);
+    else if (st.t === 'clampmin') out.push(`${ind}- ⬆️ floor pp at \`${st.x || ''}\``);
+    else if (st.t === 'softcap') out.push(`${ind}- 🪶 softcap past \`${st.cap || ''}\` (exp \`${st.exp || '0.8'}\`)`);
+    else if (st.t === 'if') {
+      out.push(`${ind}- ❓ if \`${st.cond || ''}\`:`);
+      out = out.concat(flowMd(st.then, depth + 1));
+      if (st.else && st.else.length) { out.push(`${ind}- ↪️ else:`); out = out.concat(flowMd(st.else, depth + 1)); }
+    }
+  });
+  return out;
+}
+function refreshMeta() {
+  const md = flowMd(flow, 0);
+  document.getElementById('md-preview').textContent = md.length ? md.join('\n') : '(empty — pp unchanged)';
+  document.getElementById('flow-json-input').value = JSON.stringify(flow);
+}
+
+// ── compile (server roundtrip) ─────────────────────────────────────────────
+document.getElementById('btn-compile').onclick = async () => {
+  const out = document.getElementById('compile-out');
+  out.innerHTML = '<p class="ops-hint">compiling…</p>';
+  try {
+    const res = await fetch('/admin/pp/compile', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ flow })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      out.innerHTML = '<div class="notification is-success ops-ok">✅ compiles clean — this is the Python it generates:</div>';
+      const pre = el('pre', 'ops-py'); pre.textContent = data.python; out.appendChild(pre);
+    } else {
+      out.innerHTML = ''; const n = el('div', 'notification is-danger'); n.textContent = '❌ ' + data.error; out.appendChild(n);
+    }
+  } catch (e) { out.innerHTML = '<div class="notification is-danger">request failed: ' + e + '</div>'; }
+};
+
+// ── save ───────────────────────────────────────────────────────────────────
+document.getElementById('btn-save').onclick = () => {
+  if (!confirm('Save this pp system, recalc ALL scores and restart the game server?')) return;
+  document.getElementById('flow-json-input').value = JSON.stringify(flow);
+  document.getElementById('save-form').submit();
+};
+
+// ── presets ────────────────────────────────────────────────────────────────
+const PRESETS = [
+  { name: '🏛️ Bancho Classic', tags: 'vanilla official default reset 1x', flow: [] },
+  { name: '🥁 Auraelia v3', tags: 'stream aim relax ez current default', flow: [
+    { t: 'setvar', name: 'pv', x: 'ramp(pp, 500)' },
+    { t: 'comment', text: 'base multiplier 1.5x -> 3.5x, front-loaded' },
+    { t: 'mul', x: '1.5 + 2.0 * (pv ** 0.45)' },
+    { t: 'comment', text: 'stream buff / aim nerf from the aim-speed split' },
+    { t: 'if', cond: 'speed_share > 0.40',
+      then: [{ t: 'mul', x: '1 + 0.5 * clamp((speed_share - 0.40) / 0.25, 0, 1)' }],
+      else: [{ t: 'mul', x: '1 - 0.15 * clamp((0.40 - speed_share) / 0.25, 0, 1)' }] },
+    { t: 'if', cond: 'is_ez', then: [{ t: 'mul', x: '1 + 0.45 * pv' }], else: [] },
+    { t: 'if', cond: 'is_relax', then: [{ t: 'mul', x: '0.35' }], else: [] },
+    { t: 'clampmax', x: '4000' }] },
+  { name: '⏩ DT Priority (v2)', tags: 'doubletime nightcore speed', flow: [
+    { t: 'setvar', name: 'pv', x: 'ramp(pp, 500)' },
+    { t: 'mul', x: '3.5 + 1.5 * pv' },
+    { t: 'if', cond: 'is_dt', then: [{ t: 'mul', x: '1 + 0.75 * pv' }], else: [] },
+    { t: 'if', cond: 'is_relax', then: [{ t: 'mul', x: '0.75' }], else: [] },
+    { t: 'clampmax', x: '4000' }] },
+  { name: '🌾 Farm Heaven', tags: 'inflation easy high pp casual fun', flow: [
+    { t: 'setvar', name: 'pv', x: 'ramp(pp, 400)' },
+    { t: 'mul', x: '4 + 4 * pv' },
+    { t: 'if', cond: 'is_dt', then: [{ t: 'mul', x: '1.3' }], else: [] },
+    { t: 'if', cond: 'is_relax', then: [{ t: 'mul', x: '0.5' }], else: [] }] },
+  { name: '🥁 Stream Dream', tags: 'stream burst speed nerf aim', flow: [
+    { t: 'setvar', name: 'pv', x: 'ramp(pp, 450)' },
+    { t: 'mul', x: '2 + 2 * pv' },
+    { t: 'if', cond: 'speed_share > 0.4',
+      then: [{ t: 'mul', x: '1 + 0.8 * clamp((speed_share - 0.4) / 0.25, 0, 1)' }],
+      else: [{ t: 'mul', x: '1 - 0.3 * clamp((0.4 - speed_share) / 0.25, 0, 1)' }] },
+    { t: 'if', cond: 'is_relax', then: [{ t: 'mul', x: '0.35' }], else: [] },
+    { t: 'clampmax', x: '3000' }] },
+  { name: '🏆 Tryhard (competitive)', tags: 'competitive accuracy skill balanced serious', flow: [
+    { t: 'comment', text: 'reward accuracy, punish misses, softcap the top' },
+    { t: 'mul', x: '0.9 + 0.5 * ramp(pp, 600)' },
+    { t: 'if', cond: 'acc >= 96', then: [{ t: 'mul', x: '1 + 0.2 * clamp((acc - 96) / 4, 0, 1)' }], else: [] },
+    { t: 'if', cond: 'acc < 85', then: [{ t: 'mul', x: '0.75' }], else: [] },
+    { t: 'if', cond: 'nmiss > 0', then: [{ t: 'mul', x: 'max(1 - 0.03 * nmiss, 0.7)' }], else: [] },
+    { t: 'if', cond: 'stars < 3', then: [{ t: 'mul', x: '0.6' }], else: [] },
+    { t: 'if', cond: 'is_relax', then: [{ t: 'mul', x: '0.3' }], else: [] },
+    { t: 'softcap', cap: '1200', exp: '0.75' }] },
+  { name: '✌️ Flat 2x', tags: 'simple double flat multiplier', flow: [{ t: 'mul', x: '2.0' }] },
+  { name: '😌 Relax Buff', tags: 'relax rx boost', flow: [
+    { t: 'if', cond: 'is_relax', then: [{ t: 'mul', x: '1.2' }], else: [] }] },
+  { name: '⭐ Anti-Farm', tags: 'star rating difficulty nerf low high', flow: [
+    { t: 'mul', x: '1.5 + 1.5 * ramp(pp, 500)' },
+    { t: 'if', cond: 'stars > 6', then: [{ t: 'mul', x: '1 + min(0.1 * (stars - 6), 0.5)' }], else: [] },
+    { t: 'if', cond: 'stars < 3', then: [{ t: 'mul', x: '0.4' }], else: [] }] },
+  { name: '💯 Accuracy Meta', tags: 'accuracy precision acc bonus', flow: [
+    { t: 'mul', x: '1.2' },
+    { t: 'mul', x: '1 + 0.6 * clamp((acc - 90) / 10, 0, 1)' },
+    { t: 'if', cond: 'nmiss > 0', then: [{ t: 'mul', x: 'max(1 - 0.05 * nmiss, 0.5)' }], else: [] }] },
+  { name: '🚀 High Ceiling', tags: 'uncapped skill top back-loaded', flow: [
+    { t: 'mul', x: '1 + 2 * (ramp(pp, 800) ** 2)' },
+    { t: 'if', cond: 'stars > 7', then: [{ t: 'mul', x: '1 + 0.15 * (stars - 7)' }], else: [] }] },
+  { name: '🙅 Nomod Andy', tags: 'nomod purist mod nerf vanilla', flow: [
+    { t: 'mul', x: '1.5' },
+    { t: 'if', cond: 'mods == 0', then: [{ t: 'mul', x: '1.5' }], else: [{ t: 'mul', x: '0.8' }] }] },
+  { name: '🕶️ HD Diff', tags: 'hidden reading mod', flow: [
+    { t: 'mul', x: '1.5' },
+    { t: 'if', cond: 'is_hd', then: [{ t: 'mul', x: '1.15' }], else: [] }] },
+];
+
+function renderPresets(filter) {
+  const box = document.getElementById('preset-list'); box.innerHTML = '';
+  const f = (filter || '').toLowerCase();
+  PRESETS.filter(p => !f || p.name.toLowerCase().includes(f) || p.tags.includes(f)).forEach(p => {
+    const chip = el('button', 'button is-small ops-chip', p.name); chip.type = 'button';
+    chip.onclick = () => { flow = JSON.parse(JSON.stringify(p.flow)); renderFlow(); };
+    box.appendChild(chip);
+  });
+  if (!box.children.length) box.appendChild(el('span', 'ops-hint', 'no presets match 🦗'));
+}
+document.getElementById('preset-search').oninput = (e) => renderPresets(e.target.value);
+
+// ── boot ───────────────────────────────────────────────────────────────────
+renderPresets('');
+renderFlow();
 </script>
 {% endblock %}
