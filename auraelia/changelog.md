@@ -6,6 +6,14 @@ the running history of [Auraelia](https://justharsiz.online) (`-devserver justha
 
 ---
 
+## 2026-07-04 — PP import / export 📦
+
+- the PP builder can now **export** the current flow to a small
+  `.opspp.json` file and **import** one back (from a file or pasted text).
+  back up a ruleset before experimenting, move an economy between servers,
+  or share one. imports load into the editor and validate on Compile/Save
+  like any other change.
+
 ## 2026-07-04 — PP builder guide 📖
 
 - new in-depth, documentation-style guide at **/admin/pp/guide** (linked

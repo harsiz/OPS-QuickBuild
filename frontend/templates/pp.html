@@ -41,6 +41,21 @@
     <div id="preset-list" class="ops-preset-list"></div>
   </div>
 
+  <!-- import / export -->
+  <div class="box">
+    <h2 class="subtitle">📦 import / export <span class="ops-hint">save a pp system to a file, or load one someone shared</span></h2>
+    <div class="ops-btnrow" style="flex-wrap: wrap; align-items: center; gap: 8px;">
+      <button type="button" class="button is-small" id="btn-export">⬇️ Export current flow</button>
+      <label class="button is-small ops-import-btn">⬆️ Import from file
+        <input type="file" id="import-file" accept=".json,.opspp,application/json" hidden></label>
+      <span class="ops-hint">…or paste exported markup below</span>
+    </div>
+    <textarea class="textarea ops-import-ta" id="import-text" rows="3"
+      placeholder='paste exported pp markup here (JSON), then click Load'></textarea>
+    <button type="button" class="button is-small" id="btn-import-text" style="margin-top: 6px;">Load pasted markup</button>
+    <div id="import-msg"></div>
+  </div>
+
   <div class="columns">
     <!-- editor -->
     <div class="column is-7">
@@ -324,6 +339,53 @@ function renderPresets(filter) {
   if (!box.children.length) box.appendChild(el('span', 'ops-hint', 'no presets match 🦗'));
 }
 document.getElementById('preset-search').oninput = (e) => renderPresets(e.target.value);
+
+// ── import / export ────────────────────────────────────────────────────────
+function validFlow(stmts, depth) {
+  if (depth > 12 || !Array.isArray(stmts) || stmts.length > 200) return false;
+  return stmts.every(b => {
+    if (!b || typeof b !== 'object' || typeof b.t !== 'string') return false;
+    if (b.t === 'if') return validFlow(b.then || [], depth + 1) && validFlow(b.else || [], depth + 1);
+    return true;
+  });
+}
+document.getElementById('btn-export').onclick = () => {
+  const date = new Date().toISOString().slice(0, 10);
+  const markup = JSON.stringify({ ops_pp: 1, exported: date, flow }, null, 2);
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([markup], { type: 'application/json' }));
+  a.download = 'pp-flow-' + date + '.opspp.json';
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(a.href);
+};
+function loadMarkup(text) {
+  const msg = document.getElementById('import-msg');
+  const fail = (m) => { msg.innerHTML = ''; const n = el('div', 'notification is-danger'); n.textContent = '❌ ' + m; msg.appendChild(n); };
+  let data;
+  try { data = JSON.parse(text); } catch (e) { return fail('not valid JSON — ' + e.message); }
+  const f = Array.isArray(data) ? data : (data && data.flow);
+  if (!Array.isArray(f)) return fail('no pp flow found in that markup');
+  if (!validFlow(f, 0)) return fail('that markup has malformed or too-deeply-nested blocks');
+  flow = JSON.parse(JSON.stringify(f));
+  renderFlow();
+  msg.innerHTML = '';
+  const n = el('div', 'notification is-success');
+  n.textContent = '✅ imported ' + f.length + ' block(s) — press Compile to validate, then Save to apply';
+  msg.appendChild(n);
+}
+document.getElementById('btn-import-text').onclick = () => {
+  const t = document.getElementById('import-text').value.trim();
+  if (t) loadMarkup(t);
+};
+document.getElementById('import-file').onchange = (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const r = new FileReader();
+  r.onload = () => loadMarkup(String(r.result));
+  r.onerror = () => { document.getElementById('import-msg').innerHTML = '<div class="notification is-danger">❌ could not read that file</div>'; };
+  r.readAsText(file);
+  e.target.value = '';
+};
 
 // ── boot ───────────────────────────────────────────────────────────────────
 renderPresets('');

@@ -94,6 +94,12 @@
 }
 .ops-py { max-height: 360px; overflow-y: auto; }
 
+.ops-import-ta {
+  margin-top: 10px; font-family: ui-monospace, monospace; font-size: 12px;
+  background: rgba(0,0,0,.28); border-color: hsla(var(--main,265),30%,50%,.3); color: inherit;
+}
+.ops-import-btn { position: relative; overflow: hidden; }
+
 /* ── admin-wide polish (this stylesheet only loads on /admin pages) ── */
 .box { border-radius: 12px; }
 .table { background: transparent; }
